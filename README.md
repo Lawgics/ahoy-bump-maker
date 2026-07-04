@@ -24,17 +24,86 @@ A finished bump from **Load example** — what your Plex users would see:
 
 _App walkthrough (screen recording) coming soon._
 
-## Features
+## What you can do
 
-- **Per-card text and images** — each card can have text, an image, or both (at least one required)
-- **Independent layout** — separate text/image position and image size (10–100%)
-- **Preview editing** — drag text (gold) or image (blue) in the preview; resize images via the corner handle
-- **Snap guides** — align to canvas center or the other element on the same card
-- **Timeline** — multiple cards, durations, reorder via grip handle
-- **Suggested duration** — click the suggested time to match card length to your text
-- **Background & audio** — optional image/video background (cover/contain + dim) and music muxed on export
-- **In-browser export** — MP4 via MediaRecorder or WebM → MP4 (ffmpeg.wasm)
-- **Validation** — empty cards are flagged and block Preview/Export until fixed
+[ahoy] is a small browser app — no video editor to learn. You build a short announcement slide-by-slide, preview it, and download an MP4 for Plex.
+
+- **Create a multi-part announcement** — Add cards (like slides). Each card shows for a few seconds, one after another — perfect for “hey everyone” → the news → a sign-off.
+- **Use text, images, or both** — Type your message, upload a logo or photo, or combine them on the same card (e.g. your avatar + “your server admin”).
+- **Control timing** — Set how long each card stays on screen. Not sure? Click the **Suggested** time under Seconds and it picks a readable length for you.
+- **Position everything visually** — Click a card, then drag text and images in the preview until the layout looks right. No coordinate math.
+- **Add atmosphere (optional)** — Background image or video, light grain, quick fades, background music — or skip all of it and keep the classic black bump look.
+- **Preview the full video** — Hit **Preview** to watch the whole announcement before you commit.
+- **Export an MP4** — One click downloads a file you can drop into Plex pre-rolls, NeXroll, or a media folder. Ready to show your users.
+
+## Get started
+
+Everything runs in your **web browser**. You edit on your PC; the finished MP4 goes on your Plex server. No install wizard — just open the app, make your bump, export, done.
+
+> **Docker support is coming soon** — the easiest way to run [ahoy] on a homelab. For now, use the steps below. They work on Windows, Mac, and Linux.
+
+### 1. Get the app on your computer
+
+**Option A — Download (easiest if you don’t use Git)**
+
+1. Open this repo on GitHub → green **Code** button → **Download ZIP**
+2. Unzip it somewhere simple, e.g. `C:\Users\You\ahoy-bump-maker`
+3. Inside that folder, open the **`web`** folder — that’s the app
+
+**Option B — Git**
+
+```bash
+git clone https://github.com/Lawgics/ahoy-bump-maker.git
+cd ahoy-bump-maker/web
+```
+
+### 2. Start the app
+
+Open a terminal in the **`web`** folder.
+
+**Windows (PowerShell):**
+
+```powershell
+cd C:\path\to\ahoy-bump-maker\web
+py -m http.server 1234
+```
+
+**Mac / Linux:**
+
+```bash
+cd /path/to/ahoy-bump-maker/web
+python3 -m http.server 1234
+```
+
+Leave that window open while you work. Open your browser to:
+
+**http://localhost:1234**
+
+You should see the **[ahoy]** editor.
+
+### 3. Create your announcement
+
+1. Click **Load example** to see a ready-made maintenance bump, or **+ Add card** to start fresh.
+2. For each card:
+   - Type your **Text** (or leave blank if the card is image-only)
+   - Set **Seconds** (or click **Suggested: X.Xs** to apply the recommended time)
+   - Optionally **Browse image** to add a picture
+   - Use **Text position** / **Image position** dropdowns, or click the card and **drag in the preview**
+3. Use the **grip** (six dots) on a card to drag and reorder cards.
+4. Optional: under **Background** and **Audio**, add a backdrop or music.
+5. Click **Preview** to watch the full timeline. Click **Stop** when done.
+
+### 4. Export and use on Plex
+
+1. Click **Export MP4**. Your browser downloads the video (first export may take a moment while it loads encoder files — normal).
+2. Move the MP4 somewhere your Plex server can access.
+3. Follow **[Using announcements on Plex](#using-announcements-on-plex)** below to set it up as a pre-roll (or use [NeXroll](https://github.com/JFLXCLOUD/NeXroll)).
+
+**Tips:**
+
+- Click a card to edit it. Click anywhere else (Background, Look, etc.) to deselect.
+- Export clears the edit outlines automatically — your MP4 won’t have yellow/blue boxes.
+- If **Export** is greyed out, a card is empty — add text or an image to every card.
 
 ## Using announcements on Plex
 
@@ -49,9 +118,8 @@ Once you’ve exported a bump from [ahoy], you need to get it in front of your u
 
 Good for maintenance windows, outages, and “heads up” messages that play before a movie starts.
 
-1. **Create and export** your bump in [ahoy] (**Export MP4**).
-2. **Copy the MP4** somewhere your Plex server can read (local disk, NAS share, etc.).
-3. **Tell Plex about it** using one of the options below.
+1. **Copy your exported MP4** somewhere your Plex server can read (local disk, NAS share, etc.).
+2. **Tell Plex about it** using one of the options below.
 
 #### Option A — Plex built-in pre-rolls
 
@@ -88,28 +156,12 @@ So: server path configured ✓ is not enough — each viewer needs Cinema Traile
 
 We’re working on docs for surfacing announcements on the Plex home page — e.g. a pinned **collection** or playlist (possibly with tools like [Maintainerr](https://github.com/Maintainerr/Maintainerr) or [Agregarr](https://github.com/agregarr/agregarr)) instead of a full separate library. Step-by-step guide TBD.
 
-## Run the app
-
-```bash
-cd web
-python3 -m http.server 1234
-```
-
-Then open http://localhost:1234 in your browser.
-
-On Windows, if `python3` is not available:
-
-```powershell
-cd web
-py -m http.server 1234
-```
-
 ## Planned
 
-- Export directly to a server folder (preroll path or home screen library via Docker volume + upload API)
+- **Docker image** — run [ahoy] with one command on your homelab (top priority for easier setup)
+- Export directly to a server folder (preroll path via volume mount + upload API)
+- Home screen announcement guide (collections / pinned hubs)
 - Optional basic auth for homelab deployments
-- [ahoy] Docker image
-- Home screen announcement guide
 
 ## Credits & lineage
 
@@ -131,6 +183,4 @@ Then open http://localhost:5173.
 
 ## Notes
 
-- First export may download browser-side encoder assets (ffmpeg.wasm) depending on your setup.
-- Click a card to edit; click elsewhere (Audio, Background, Look, etc.) to deselect.
-- Export automatically deselects cards so edit outlines don’t appear in the final video.
+- First export may take a little longer while your browser downloads encoder files — only happens once.
