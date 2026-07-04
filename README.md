@@ -2,7 +2,7 @@
 
 **Short announcement videos for Plex server admins.**
 
-Create simple Adult Swim–style bump videos to tell your Plex users about maintenance windows, new features, library updates, and anything else that’s hard to broadcast over group texts, Discord, or email. Export MP4s for pre-rolls (e.g. NeXroll) or drop them into a dedicated **Announcements** library on your home screen.
+Create simple Adult Swim–style bump videos to tell your Plex users about maintenance windows, new features, library updates, and anything else that’s hard to broadcast over group texts, Discord, or email. Export MP4s and deliver them on Plex as **pre-rolls** or (coming soon) pinned **home screen** collections.
 
 ## Why this exists
 
@@ -14,12 +14,50 @@ Self-hosted Plex admins often struggle to reach everyone on the server:
 
 Your users already open Plex to watch something. **[ahoy]** makes it easy to meet them there — a 5–10 second video that says *“Maintenance Sunday 2–4am”* or *“Watchlist now sends me a request”* without leaving the app.
 
-## How you might use it
+## Using announcements on Plex
 
-| Method | Good for |
-|--------|----------|
-| **Pre-roll** (NeXroll, etc.) | Time-sensitive notices before playback |
-| **Announcements library** | Longer-lived messages, multiple clips, optional browsing |
+### Pre-rolls (play before movies)
+
+Good for time-sensitive notices — maintenance windows, outages, “heads up” messages before playback starts.
+
+1. **Create and export** your bump in [ahoy] (**Export MP4**).
+2. **Copy the MP4** somewhere your Plex server can read (local disk, NAS share, etc.).
+3. **Tell Plex about it** using one of the options below.
+
+#### Option A — Plex built-in pre-rolls
+
+In **Plex Web App**, open your server → click the **Settings** wrench → **Settings** → **Server** → **Extras**.
+
+Under **Movie pre-roll video**, enter the **full path** to your exported file, for example:
+
+```
+/mnt/user/media/prerolls/maintenance.mp4
+```
+
+Plex docs: [Extras (pre-rolls & Cinema Trailers)](https://support.plex.tv/articles/202920803-extras/)
+
+**Multiple pre-rolls:**
+
+- **Comma** — play all listed videos in order: `preroll-1.mp4,preroll-2.mp4`
+- **Semicolon** — pick one at random: `preroll-1.mp4;preroll-2.mp4`
+
+Do not add spaces around the separators.
+
+#### Option B — [NeXroll](https://github.com/JFLXCLOUD/NeXroll) (recommended for ongoing use)
+
+[NeXroll](https://github.com/JFLXCLOUD/NeXroll) is a preroll manager for Plex (and Jellyfin/Emby). Upload bumps, organize them, schedule which play when, and apply paths to Plex from a web UI — handy if you rotate announcements or run more than one pre-roll.
+
+#### Important — your users must have Cinema Trailers enabled
+
+Pre-rolls only play when Cinema Trailers is turned on. From Plex’s docs:
+
+> In order to have the “pre-roll” video(s) played, users will need to have the Cinema Trailers feature enabled in their Plex App. The **Enable Cinema Trailers** advanced library setting must also be enabled for the library.
+
+So: server path configured ✓ is not enough — each viewer needs Cinema Trailers on in their client **and** in that library’s advanced settings. Worth mentioning to your users when you roll out announcements.
+
+### On your home screen (coming soon)
+
+We’re working on docs for surfacing announcements on the Plex home page — e.g. a pinned **collection** or playlist (possibly with tools like [Maintainerr](https://github.com/Maintainerr/Maintainerr) or [Agregarr](https://github.com/agregarr/agregarr)) instead of a full separate library. Discussion and step-by-step guide TBD.
 
 ## Demo
 
