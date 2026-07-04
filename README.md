@@ -2,8 +2,6 @@
 
 **Short announcement videos for Plex server admins.**
 
-Create simple Adult Swim–style bump videos to tell your Plex users about maintenance windows, new features, library updates, and anything else that’s hard to broadcast over group texts, Discord, or email. Export MP4s and deliver them on Plex as **pre-rolls** or (coming soon) pinned **home screen** collections.
-
 ## Why this exists
 
 Self-hosted Plex admins often struggle to reach everyone on the server:
@@ -12,13 +10,44 @@ Self-hosted Plex admins often struggle to reach everyone on the server:
 - **Discord** only works if every viewer actually uses it
 - **Email** gets ignored or lost
 
-Your users already open Plex to watch something. **[ahoy]** makes it easy to meet them there — a 5–10 second video that says *“Maintenance Sunday 2–4am”* or *“Watchlist now sends me a request”* without leaving the app.
+Your users already open Plex to watch something. **[ahoy]** lets you meet them there — create simple Adult Swim–style bump videos for maintenance windows, new features, library updates, and anything else that’s awkward to broadcast elsewhere. Export an MP4 and deliver it on Plex as a **pre-roll** or (coming soon) a pinned **home screen** collection.
+
+## See it in action
+
+### Example output
+
+A finished bump from **Load example** — what your Plex users would see:
+
+![Example output](assets/example-output.gif)
+
+### Demo
+
+_App walkthrough (screen recording) coming soon._
+
+## Features
+
+- **Per-card text and images** — each card can have text, an image, or both (at least one required)
+- **Independent layout** — separate text/image position and image size (10–100%)
+- **Preview editing** — drag text (gold) or image (blue) in the preview; resize images via the corner handle
+- **Snap guides** — align to canvas center or the other element on the same card
+- **Timeline** — multiple cards, durations, reorder via grip handle
+- **Suggested duration** — click the suggested time to match card length to your text
+- **Background & audio** — optional image/video background (cover/contain + dim) and music muxed on export
+- **In-browser export** — MP4 via MediaRecorder or WebM → MP4 (ffmpeg.wasm)
+- **Validation** — empty cards are flagged and block Preview/Export until fixed
 
 ## Using announcements on Plex
 
+Once you’ve exported a bump from [ahoy], you need to get it in front of your users. Two main approaches:
+
+| Method | Good for | Status |
+|--------|----------|--------|
+| **Pre-rolls** | Time-sensitive notices before movies | Documented below |
+| **Home screen** | Longer-lived messages, browsing | Guide coming soon |
+
 ### Pre-rolls (play before movies)
 
-Good for time-sensitive notices — maintenance windows, outages, “heads up” messages before playback starts.
+Good for maintenance windows, outages, and “heads up” messages that play before a movie starts.
 
 1. **Create and export** your bump in [ahoy] (**Export MP4**).
 2. **Copy the MP4** somewhere your Plex server can read (local disk, NAS share, etc.).
@@ -57,35 +86,9 @@ So: server path configured ✓ is not enough — each viewer needs Cinema Traile
 
 ### On your home screen (coming soon)
 
-We’re working on docs for surfacing announcements on the Plex home page — e.g. a pinned **collection** or playlist (possibly with tools like [Maintainerr](https://github.com/Maintainerr/Maintainerr) or [Agregarr](https://github.com/agregarr/agregarr)) instead of a full separate library. Discussion and step-by-step guide TBD.
+We’re working on docs for surfacing announcements on the Plex home page — e.g. a pinned **collection** or playlist (possibly with tools like [Maintainerr](https://github.com/Maintainerr/Maintainerr) or [Agregarr](https://github.com/agregarr/agregarr)) instead of a full separate library. Step-by-step guide TBD.
 
-## Demo
-
-_App walkthrough (screen recording) coming soon._
-
-## Example output
-
-A finished bump from **Load example** — what your Plex users would see:
-
-![Example output](assets/example-output.gif)
-
-## Features
-
-- **Per-card text and images** — each card can have text, an image, or both (at least one required)
-- **Independent layout** — separate text/image position and image size (10–100%)
-- **Preview editing** — drag text (gold) or image (blue) in the preview; resize images via the corner handle
-- **Snap guides** — align to canvas center or the other element on the same card
-- **Timeline** — multiple cards, durations, reorder via grip handle
-- **Background & audio** — optional image/video background (cover/contain + dim) and music muxed on export
-- **In-browser export** — MP4 via MediaRecorder or WebM → MP4 (ffmpeg.wasm)
-- **Validation** — empty cards are flagged and block Preview/Export until fixed
-
-## Planned
-
-- Export directly to a server folder (preroll path or Announcements library via Docker volume + upload API)
-- Optional basic auth for homelab deployments
-
-## Run from source (development)
+## Run the app
 
 ```bash
 cd web
@@ -101,11 +104,18 @@ cd web
 py -m http.server 1234
 ```
 
+## Planned
+
+- Export directly to a server folder (preroll path or home screen library via Docker volume + upload API)
+- Optional basic auth for homelab deployments
+- [ahoy] Docker image
+- Home screen announcement guide
+
 ## Credits & lineage
 
 **[ahoy]** is a fork and rebrand of [Matthunker/as-bump-maker](https://github.com/Matthunker/as-bump-maker).
 
-The original project targets [Tunarr](https://github.com/chrisbenincasa/tunarr) and live-TV bump interstitials. Matthunker did the heavy lifting on the core bump engine, canvas rendering, and export pipeline — this project builds on that work and repurpose it for Plex server announcements.
+The original project targets [Tunarr](https://github.com/chrisbenincasa/tunarr) and live-TV bump interstitials. Matthunker did the heavy lifting on the core bump engine, canvas rendering, and export pipeline — this project builds on that work and repurposes it for Plex server announcements.
 
 Thanks to **Matthunker** for the original app and Docker image (`matthuey/as-bump-maker`).
 
@@ -122,4 +132,5 @@ Then open http://localhost:5173.
 ## Notes
 
 - First export may download browser-side encoder assets (ffmpeg.wasm) depending on your setup.
-- Preview edit mode: click a card to select it; click elsewhere (Audio, Background, Look, etc.) to deselect.
+- Click a card to edit; click elsewhere (Audio, Background, Look, etc.) to deselect.
+- Export automatically deselects cards so edit outlines don’t appear in the final video.
