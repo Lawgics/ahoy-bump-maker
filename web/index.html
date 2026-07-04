@@ -33,16 +33,17 @@
       </div>
 
       <div class="mediaFrame">
-        <div class="canvasWrap canvasWrapTop" id="previewFrame">
-          <canvas id="canvas" width="1920" height="1080"></canvas>
+        <div class="previewStack">
+          <div class="canvasWrap canvasWrapTop" id="previewFrame">
+            <canvas id="canvas" width="1920" height="1080"></canvas>
+            <video id="resultVideo" controls style="display:none;"></video>
+            <a id="downloadLink" download="bump.mp4" style="display:none;">Download</a>
+          </div>
 
           <div class="statusOverlay">
             <div id="statusLine">Ready.</div>
             <div class="progressWrap"><div id="progressBar"></div></div>
           </div>
-
-          <video id="resultVideo" controls style="display:none;"></video>
-          <a id="downloadLink" download="bump.mp4" style="display:none;">Download</a>
         </div>
 
         <pre id="log" class="log" style="display:none;"></pre>
@@ -64,7 +65,7 @@
           </div>
 
           <div class="hint" style="margin-bottom:10px;">
-            Drag cards to reorder.
+            Click a card to edit. Drag the grip to reorder cards.
           </div>
 
           <div id="cards"></div>

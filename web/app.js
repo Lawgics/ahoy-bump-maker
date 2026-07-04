@@ -35,8 +35,20 @@ const fontFamilyEl = $('#fontFamily');
 const fontSizeEl = $('#fontSize');
 const enableFadeEl = $('#enableFade');
 const enableGrainEl = $('#enableGrain');
+const previewFrame = $('#previewFrame');
 
-function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+const PRESET_OPTIONS = `
+  <option value="top-left">Top Left</option>
+  <option value="top">Top</option>
+  <option value="top-right">Top Right</option>
+  <option value="left">Left</option>
+  <option value="center">Center</option>
+  <option value="right">Right</option>
+  <option value="bottom-left">Bottom Left</option>
+  <option value="bottom">Bottom</option>
+  <option value="bottom-right">Bottom Right</option>
+  <option value="custom">Custom (dragged)</option>
+`;
 
 /* ✅ autosize textarea helper */
 function autosizeTA(ta){
@@ -68,6 +80,69 @@ function presetToAnchor(preset) {
     case 'bottom-right': return { ax: 0.92, ay: 0.88, align: 'right', v: 'bottom' };
     default:             return { ax: 0.50, ay: 0.50, align: 'center',v: 'middle' };
   }
+}
+
+function applyPresetToPos(pos, preset) {
+  if (preset === 'custom') {
+    pos.preset = 'custom';
+    return;
+  }
+  const a = presetToAnchor(preset);
+  pos.preset = preset;
+  pos.x = a.ax;
+  pos.y = a.ay;
+}
+
+function getImagePos(card) {
+  const p = card?.image?.pos || {};
+  return {
+    preset: p.preset || 'center',
+    x: typeof p.x === 'number' ? p.x : 0.5,
+    y: typeof p.y === 'number' ? p.y : 0.5,
+  };
+}
+
+function getImageScalePct(card) {
+  return clamp(Number(card?.image?.scale ?? 65), 10, 100);
+}
+
+function getEditTimeForCard(idx) {
+  let t = 0;
+  for (let i = 0; i < idx; i++) t += Number(cards[i].duration) || 0;
+  return t + 0.05;
+}
+
+function deselectCard() {
+  if (selectedCardIndex == null) return;
+  selectedCardIndex = null;
+  editDrag = null;
+  snapGuides = { vertical: null, horizontal: null };
+  renderCardsUI();
+  if (!isPreviewing) {
+    refreshEditView();
+    setStatus('Ready. Click a card to edit.');
+  }
+}
+
+function setSelectedCard(idx) {
+  if (!Number.isFinite(idx) || idx < 0 || idx >= cards.length) return;
+  selectedCardIndex = idx;
+  renderCardsUI();
+  if (!isPreviewing) {
+    refreshEditView();
+    setStatus(`Editing card ${idx + 1}. Drag text or image in the preview.`);
+  }
+}
+
+function refreshEditView() {
+  if (isPreviewing) return;
+  canvas.classList.remove('editMode');
+  if (selectedCardIndex == null || !cards[selectedCardIndex]) {
+    drawFrame(0);
+    return;
+  }
+  canvas.classList.add('editMode');
+  drawFrame(getEditTimeForCard(selectedCardIndex));
 }
 
 // Global DVD bounce state
@@ -110,9 +185,16 @@ let cards = [
 let isPreviewing = false;
 let rafId = null;
 let previewStartMs = 0;
+let selectedCardIndex = 0;
+let editDrag = null;
+let snapGuides = { vertical: null, horizontal: null };
+
+const SNAP_THRESHOLD_RATIO = 1 / 120;
 
 let ffmpeg = null;
 let ffmpegLoaded = false;
+
+function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
 function setStatus(msg) { statusLine.textContent = msg; }
 
@@ -225,18 +307,36 @@ function drawFrame(tSeconds) {
   const active = computeActiveCard(tSeconds);
   if (!active) return;
 
-  const text = escapeText(active.card.text);
+  const card = active.card;
+  const contentAlpha = getCardContentAlpha(active, tSeconds, enableFade);
+
+  if (card.image?.el) {
+    drawCardImage(card, w, h, contentAlpha);
+  }
+
+  const text = escapeText(card.text || '').trim();
+  if (!text) {
+    if (enableGrain) drawGrain(w, h);
+    drawEditChrome(card, w, h);
+    return;
+  }
+
+  drawCardText(card, w, h, contentAlpha, { fontFamily, fontSize, enableGrain, tSeconds, active });
+  drawEditChrome(card, w, h);
+}
+
+function measureTextBlock(card, w, h, fontFamily, fontSize) {
+  const text = escapeText(card.text || '').trim();
+  if (!text) return null;
 
   const weight = 700;
   const lineHeight = 1.18;
-
-  ctx.fillStyle = '#fff';
-  ctx.font = `${weight} ${fontSize}px ${fontFamily}`;
-
   const maxWidth = w * 0.90;
-  let lines = wrapText(ctx, text, maxWidth);
 
+  ctx.font = `${weight} ${fontSize}px ${fontFamily}`;
+  let lines = wrapText(ctx, text, maxWidth);
   let size = fontSize;
+
   for (let tries = 0; tries < 12; tries++) {
     ctx.font = `${weight} ${size}px ${fontFamily}`;
     lines = wrapText(ctx, text, maxWidth);
@@ -246,14 +346,53 @@ function drawFrame(tSeconds) {
     if (size < 18) break;
   }
 
+  ctx.font = `${weight} ${size}px ${fontFamily}`;
+  const blockW = Math.max(...lines.map(l => ctx.measureText(l).width));
   const blockH = lines.length * size * lineHeight;
+  return { lines, size, lineHeight, blockW, blockH, weight };
+}
 
-  const dvdOn = !!(active.card?.pos?.dvd);
+function getTextRect(card, w, h, settings) {
+  const block = measureTextBlock(card, w, h, settings.fontFamily, settings.fontSize);
+  if (!block) return null;
+  const pos = getCardPos(card);
+  if (pos.dvd) return null;
+
+  let left, top, anchorX;
+  if (pos.preset === 'custom') {
+    anchorX = pos.x * w;
+    left = anchorX - block.blockW / 2;
+    top = pos.y * h - block.blockH / 2;
+  } else {
+    const anchor = presetToAnchor(pos.preset);
+    anchorX = anchor.ax * w;
+    if (anchor.align === 'left') left = anchorX;
+    else if (anchor.align === 'right') left = anchorX - block.blockW;
+    else left = anchorX - block.blockW / 2;
+
+    if (anchor.v === 'top') top = anchor.ay * h;
+    else if (anchor.v === 'bottom') top = anchor.ay * h - block.blockH;
+    else top = anchor.ay * h - block.blockH / 2;
+  }
+
+  return { left, top, w: block.blockW, h: block.blockH, block, anchorX };
+}
+
+function drawCardText(card, w, h, contentAlpha, settings) {
+  const { fontFamily, fontSize, enableGrain, tSeconds = 0, active = null } = settings;
+  const block = measureTextBlock(card, w, h, fontFamily, fontSize);
+  if (!block) return;
+
+  const pos = getCardPos(card);
+  const dvdOn = !!pos.dvd;
+
+  ctx.fillStyle = '#fff';
+  ctx.font = `${block.weight} ${block.size}px ${fontFamily}`;
+
   if (dvdOn) {
-    const blockW = Math.max(...lines.map(l => ctx.measureText(l).width));
-    const margin = Math.max(12, Math.round(size * 0.25));
-    const maxX = Math.max(1, w - blockW - margin * 2);
-    const maxY = Math.max(1, h - blockH - margin * 2);
+    const margin = Math.max(12, Math.round(block.size * 0.25));
+    const maxX = Math.max(1, w - block.blockW - margin * 2);
+    const maxY = Math.max(1, h - block.blockH - margin * 2);
 
     if (!dvdState.init || !dvdState.lastWasDvd) {
       dvdState.init = true;
@@ -280,70 +419,354 @@ function drawFrame(tSeconds) {
     dvdState.lastWasDvd = true;
 
     const xLeft = margin + dvdState.x;
-    const yTop  = margin + dvdState.y;
+    let y = margin + dvdState.y + (block.size * block.lineHeight / 2);
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
+    ctx.globalAlpha = contentAlpha;
 
-    let y = yTop + (size * lineHeight / 2);
-
-    if (enableFade) {
-      const fade = 0.18;
-      const inA = Math.min(1, active.localT / fade);
-      const outA = Math.min(1, (active.end - tSeconds) / fade);
-      ctx.globalAlpha = clamp(Math.min(inA, outA), 0, 1);
-    } else ctx.globalAlpha = 1;
-
-    for (const line of lines) {
+    for (const line of block.lines) {
       ctx.fillText(line, xLeft, y);
-      y += size * lineHeight;
+      y += block.size * block.lineHeight;
     }
     ctx.globalAlpha = 1;
     if (enableGrain) drawGrain(w, h);
     return;
+  }
+
+  dvdState.lastWasDvd = false;
+
+  const rect = getTextRect(card, w, h, settings);
+  if (!rect) return;
+
+  const pos2 = getCardPos(card);
+  if (pos2.preset === 'custom') {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let y = rect.top + (block.size * block.lineHeight / 2);
+    ctx.globalAlpha = contentAlpha;
+    for (const line of block.lines) {
+      ctx.fillText(line, rect.anchorX, y);
+      y += block.size * block.lineHeight;
+    }
   } else {
-    dvdState.lastWasDvd = false;
+    const anchor = presetToAnchor(pos2.preset);
+    ctx.textAlign = anchor.align;
+    ctx.textBaseline = 'middle';
+    let y = rect.top + (block.size * block.lineHeight / 2);
+    const x = anchor.align === 'left' ? rect.left : anchor.align === 'right' ? rect.left + rect.w : rect.anchorX;
+    ctx.globalAlpha = contentAlpha;
+    for (const line of block.lines) {
+      ctx.fillText(line, x, y);
+      y += block.size * block.lineHeight;
+    }
   }
 
-  const pos = getCardPos(active.card);
-  const anchor = presetToAnchor(pos.preset);
-
-  const anchorPxX = anchor.ax * w;
-  const anchorPxY = anchor.ay * h;
-
-  ctx.textAlign = anchor.align;
-  ctx.textBaseline = 'middle';
-
-  let yStart;
-  if (anchor.v === 'top') yStart = anchorPxY;
-  else if (anchor.v === 'bottom') yStart = anchorPxY - blockH;
-  else yStart = anchorPxY - (blockH / 2);
-
-  let y = yStart + (size * lineHeight / 2);
-  const x = anchorPxX;
-
-  if (enableFade) {
-    const fade = 0.18;
-    const inA = Math.min(1, active.localT / fade);
-    const outA = Math.min(1, (active.end - tSeconds) / fade);
-    ctx.globalAlpha = clamp(Math.min(inA, outA), 0, 1);
-  } else ctx.globalAlpha = 1;
-
-  for (const line of lines) {
-    ctx.fillText(line, x, y);
-    y += size * lineHeight;
-  }
   ctx.globalAlpha = 1;
-
   if (enableGrain) drawGrain(w, h);
+}
+
+function drawEditChrome(card, w, h) {
+  if (isPreviewing || selectedCardIndex == null) return;
+  const idx = cards.indexOf(card);
+  if (idx !== selectedCardIndex) return;
+
+  const settings = getSettings();
+  const lineW = Math.max(2, w / 540);
+  const handle = Math.max(12, w / 100);
+
+  const ir = computeImageRect(card, w, h);
+  if (ir) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(90,170,255,0.95)';
+    ctx.lineWidth = lineW;
+    ctx.setLineDash([10, 8]);
+    ctx.strokeRect(ir.x, ir.y, ir.w, ir.h);
+    ctx.fillStyle = 'rgba(90,170,255,0.95)';
+    ctx.fillRect(ir.x + ir.w - handle, ir.y + ir.h - handle, handle, handle);
+    ctx.restore();
+  }
+
+  const tr = getTextRect(card, w, h, settings);
+  if (tr) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,210,80,0.95)';
+    ctx.lineWidth = lineW;
+    ctx.setLineDash([10, 8]);
+    ctx.strokeRect(tr.left, tr.top, tr.w, tr.h);
+    ctx.restore();
+  }
+
+  drawSnapGuides(w, h);
+}
+
+function drawSnapGuides(w, h) {
+  if (snapGuides.vertical == null && snapGuides.horizontal == null) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(120,255,180,0.9)';
+  ctx.lineWidth = Math.max(1.5, w / 720);
+  ctx.setLineDash([8, 8]);
+  if (snapGuides.vertical != null) {
+    ctx.beginPath();
+    ctx.moveTo(snapGuides.vertical, 0);
+    ctx.lineTo(snapGuides.vertical, h);
+    ctx.stroke();
+  }
+  if (snapGuides.horizontal != null) {
+    ctx.beginPath();
+    ctx.moveTo(0, snapGuides.horizontal);
+    ctx.lineTo(w, snapGuides.horizontal);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function getAlignmentTargets(card, w, h, settings, excludeKind) {
+  const xs = [w * 0.5];
+  const ys = [h * 0.5];
+
+  if (excludeKind !== 'text') {
+    const tr = getTextRect(card, w, h, settings);
+    if (tr) {
+      xs.push(tr.left + tr.w / 2);
+      ys.push(tr.top + tr.h / 2);
+    }
+  }
+  if (excludeKind !== 'image') {
+    const ir = computeImageRect(card, w, h);
+    if (ir) {
+      xs.push(ir.cx);
+      ys.push(ir.cy);
+    }
+  }
+
+  return { xs, ys };
+}
+
+function snapAxis(value, targets, threshold) {
+  let best = { value, snapped: false, dist: threshold + 1 };
+  for (const t of targets) {
+    const dist = Math.abs(value - t);
+    if (dist <= threshold && dist < best.dist) {
+      best = { value: t, snapped: true, dist };
+    }
+  }
+  return best;
+}
+
+function applySnapToCenter(cx, cy, card, w, h, settings, excludeKind) {
+  const threshold = Math.max(10, w * SNAP_THRESHOLD_RATIO);
+  const { xs, ys } = getAlignmentTargets(card, w, h, settings, excludeKind);
+  const sx = snapAxis(cx, xs, threshold);
+  const sy = snapAxis(cy, ys, threshold);
+  snapGuides = {
+    vertical: sx.snapped ? sx.value : null,
+    horizontal: sy.snapped ? sy.value : null,
+  };
+  return { cx: sx.value, cy: sy.value };
+}
+
+function computeImageRect(card, w, h) {
+  const img = card?.image?.el;
+  if (!img) return null;
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  if (!iw || !ih) return null;
+
+  const scalePct = getImageScalePct(card) / 100;
+  const maxW = w * 0.85;
+  const maxH = h * 0.85;
+  const base = Math.min(maxW / iw, maxH / ih, 1);
+  const dw = iw * base * scalePct;
+  const dh = ih * base * scalePct;
+
+  const ip = getImagePos(card);
+  const cx = ip.x * w;
+  const cy = ip.y * h;
+  return { x: cx - dw / 2, y: cy - dh / 2, w: dw, h: dh, cx, cy };
+}
+
+function drawCardImage(card, w, h, alpha) {
+  const r = computeImageRect(card, w, h);
+  if (!r) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(card.image.el, r.x, r.y, r.w, r.h);
+  ctx.restore();
+}
+
+function hitTestEdit(px, py, card, w, h) {
+  const settings = getSettings();
+  const handle = Math.max(12, w / 100);
+  const ir = computeImageRect(card, w, h);
+
+  if (ir) {
+    const hx = ir.x + ir.w - handle;
+    const hy = ir.y + ir.h - handle;
+    if (px >= hx && px <= hx + handle && py >= hy && py <= hy + handle) {
+      return { kind: 'image', mode: 'scale' };
+    }
+    if (px >= ir.x && px <= ir.x + ir.w && py >= ir.y && py <= ir.y + ir.h) {
+      return { kind: 'image', mode: 'move' };
+    }
+  }
+
+  const tr = getTextRect(card, w, h, settings);
+  if (tr && px >= tr.left && px <= tr.left + tr.w && py >= tr.top && py <= tr.top + tr.h) {
+    return { kind: 'text', mode: 'move' };
+  }
+
+  return null;
+}
+
+function canvasPointFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY,
+  };
+}
+
+function syncCardControlsFromData(idx) {
+  const wrap = cardsEl.querySelector(`[data-card-index="${idx}"]`);
+  if (!wrap) return;
+  const card = cards[idx];
+  ensureCardDefaults(card);
+
+  const textPreset = wrap.querySelector('[data-field="text-preset"]');
+  const imagePreset = wrap.querySelector('[data-field="image-preset"]');
+  const imageScale = wrap.querySelector('[data-field="image-scale"]');
+  const imageScaleVal = wrap.querySelector('[data-field="image-scale-val"]');
+
+  if (textPreset) textPreset.value = card.pos.preset;
+  if (imagePreset && card.image?.el) imagePreset.value = getImagePos(card).preset;
+  if (imageScale && card.image?.el) {
+    imageScale.value = String(getImageScalePct(card));
+    if (imageScaleVal) imageScaleVal.textContent = `${getImageScalePct(card)}%`;
+  }
+}
+
+function setupCanvasEditHandlers() {
+  canvas.addEventListener('pointerdown', (e) => {
+    if (isPreviewing) return;
+
+    const { w, h } = getSettings();
+    const p = canvasPointFromEvent(e);
+
+    if (selectedCardIndex == null) return;
+    const card = cards[selectedCardIndex];
+    if (!card) return;
+
+    const hit = hitTestEdit(p.x, p.y, card, w, h);
+    if (!hit) {
+      deselectCard();
+      return;
+    }
+
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+
+    if (hit.kind === 'image' && hit.mode === 'scale') {
+      const ir = computeImageRect(card, w, h);
+      editDrag = {
+        kind: 'image',
+        mode: 'scale',
+        startX: p.x,
+        startY: p.y,
+        startScale: getImageScalePct(card),
+        startDist: Math.max(40, Math.hypot(p.x - ir.cx, p.y - ir.cy)),
+      };
+    } else if (hit.kind === 'image') {
+      const ip = getImagePos(card);
+      editDrag = {
+        kind: 'image',
+        mode: 'move',
+        startX: p.x,
+        startY: p.y,
+        origX: ip.x,
+        origY: ip.y,
+      };
+    } else {
+      const pos = getCardPos(card);
+      const settings = getSettings();
+      const { w, h } = settings;
+      let origX = pos.x;
+      let origY = pos.y;
+      const tr = getTextRect(card, w, h, settings);
+      if (tr && pos.preset !== 'custom') {
+        origX = (tr.left + tr.w / 2) / w;
+        origY = (tr.top + tr.h / 2) / h;
+      }
+      editDrag = {
+        kind: 'text',
+        mode: 'move',
+        startX: p.x,
+        startY: p.y,
+        origX,
+        origY,
+      };
+    }
+    snapGuides = { vertical: null, horizontal: null };
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!editDrag || selectedCardIndex == null) return;
+    const card = cards[selectedCardIndex];
+    if (!card) return;
+
+    const settings = getSettings();
+    const { w, h } = settings;
+    const p = canvasPointFromEvent(e);
+
+    if (editDrag.kind === 'image' && editDrag.mode === 'scale') {
+      const ir = computeImageRect(card, w, h);
+      const dist = Math.max(40, Math.hypot(p.x - ir.cx, p.y - ir.cy));
+      const factor = dist / editDrag.startDist;
+      card.image.scale = clamp(Math.round(editDrag.startScale * factor), 10, 100);
+      syncCardControlsFromData(selectedCardIndex);
+      snapGuides = { vertical: null, horizontal: null };
+    } else if (editDrag.kind === 'image') {
+      const dx = p.x - editDrag.startX;
+      const dy = p.y - editDrag.startY;
+      if (!card.image.pos) card.image.pos = { preset: 'center', x: 0.5, y: 0.5 };
+      let cx = editDrag.origX * w + dx;
+      let cy = editDrag.origY * h + dy;
+      const snapped = applySnapToCenter(cx, cy, card, w, h, settings, 'image');
+      card.image.pos.preset = 'custom';
+      card.image.pos.x = clamp(snapped.cx / w, 0.05, 0.95);
+      card.image.pos.y = clamp(snapped.cy / h, 0.05, 0.95);
+      syncCardControlsFromData(selectedCardIndex);
+    } else {
+      const dx = p.x - editDrag.startX;
+      const dy = p.y - editDrag.startY;
+      let cx = editDrag.origX * w + dx;
+      let cy = editDrag.origY * h + dy;
+      const snapped = applySnapToCenter(cx, cy, card, w, h, settings, 'text');
+      card.pos.preset = 'custom';
+      card.pos.x = clamp(snapped.cx / w, 0.05, 0.95);
+      card.pos.y = clamp(snapped.cy / h, 0.05, 0.95);
+      syncCardControlsFromData(selectedCardIndex);
+    }
+
+    refreshEditView();
+  });
+
+  const endDrag = () => {
+    editDrag = null;
+    snapGuides = { vertical: null, horizontal: null };
+    if (!isPreviewing) refreshEditView();
+  };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
 }
 
 function stopPreview() {
   if (!isPreviewing) return;
   isPreviewing = false;
-  btnPreview.disabled = false;
-  btnExport.disabled = false;
   btnStop.disabled = true;
+  updateActionButtons();
 
   if (!audioPlayer.paused) {
     audioPlayer.pause();
@@ -370,12 +793,13 @@ function previewLoop() {
 }
 
 btnPreview.addEventListener('click', () => {
-  if (!cards.length) return;
+  if (!isProjectValid()) return;
 
   canvas.style.display = 'block';
   resultVideo.style.display = 'none';
 
   isPreviewing = true;
+  canvas.classList.remove('editMode');
   btnPreview.disabled = true;
   btnExport.disabled = true;
   btnStop.disabled = false;
@@ -411,7 +835,7 @@ bgFile?.addEventListener('change', async (e) => {
   if (!file) {
     if (bg.url) URL.revokeObjectURL(bg.url);
     bg = { type: 'none', url: null, el: null };
-    if (!isPreviewing) drawFrame(0);
+    if (!isPreviewing) redrawIdle();
     return;
   }
 
@@ -420,7 +844,7 @@ bgFile?.addEventListener('change', async (e) => {
 
   if (file.type.startsWith('image/')) {
     const img = new Image();
-    img.onload = () => { bg = { type: 'image', url, el: img }; if (!isPreviewing) drawFrame(0); };
+    img.onload = () => { bg = { type: 'image', url, el: img }; if (!isPreviewing) redrawIdle(); };
     img.src = url;
     return;
   }
@@ -438,7 +862,7 @@ bgFile?.addEventListener('change', async (e) => {
       bg = { type: 'video', url, el: vid };
       try { vid.currentTime = 0; } catch {}
       try { await vid.play(); } catch {}
-      if (!isPreviewing) drawFrame(0);
+      if (!isPreviewing) redrawIdle();
     });
     return;
   }
@@ -461,14 +885,106 @@ function ensureCardDefaults(card) {
   if (typeof card.pos.dvd !== 'boolean') card.pos.dvd = false;
   if (typeof card.duration !== 'number') card.duration = 2.0;
   if (typeof card.text !== 'string') card.text = '';
+  if (card.image === undefined) card.image = null;
+  if (card.image?.el) {
+    if (!card.image.pos) card.image.pos = { preset: 'center', x: 0.5, y: 0.5 };
+    if (typeof card.image.scale !== 'number') card.image.scale = 65;
+  }
+}
+
+function cardHasContent(card) {
+  const hasText = !!(card.text || '').trim();
+  const hasImage = !!(card.image?.el);
+  return hasText || hasImage;
+}
+
+function isProjectValid() {
+  return cards.length > 0 && cards.every(cardHasContent);
+}
+
+function updateActionButtons() {
+  const valid = isProjectValid();
+  if (!isPreviewing) {
+    btnPreview.disabled = !valid;
+    btnExport.disabled = !valid;
+  }
+}
+
+function revokeCardImage(card) {
+  if (card?.image?.url) {
+    try { URL.revokeObjectURL(card.image.url); } catch {}
+  }
+  card.image = null;
+}
+
+function cloneCard(card) {
+  ensureCardDefaults(card);
+  const copy = {
+    text: card.text,
+    duration: card.duration,
+    pos: { ...card.pos },
+    image: null,
+  };
+  if (card.image?.url && card.image?.el) {
+    copy.image = {
+      url: card.image.url,
+      el: card.image.el,
+      name: card.image.name || 'image',
+      scale: getImageScalePct(card),
+      pos: { ...getImagePos(card) },
+    };
+  }
+  return copy;
+}
+
+function setCardImage(card, file) {
+  revokeCardImage(card);
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    card.image = {
+      url,
+      el: img,
+      name: file.name,
+      scale: 65,
+      pos: { preset: 'center', x: 0.5, y: 0.5 },
+    };
+    renderCardsUI();
+    if (!isPreviewing) redrawIdle();
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    card.image = null;
+    renderCardsUI();
+  };
+  img.src = url;
+}
+
+function redrawIdle() {
+  if (isPreviewing) return;
+  if (selectedCardIndex != null && cards[selectedCardIndex]) {
+    drawFrame(getEditTimeForCard(selectedCardIndex));
+  } else {
+    drawFrame(0);
+  }
+}
+
+function getCardContentAlpha(active, tSeconds, enableFade) {
+  if (!enableFade) return 1;
+  const fade = 0.18;
+  const inA = Math.min(1, active.localT / fade);
+  const outA = Math.min(1, (active.end - tSeconds) / fade);
+  return clamp(Math.min(inA, outA), 0, 1);
 }
 
 /* Drag & drop reorder */
 let dragFromIndex = null;
 
-function onDragStart(idx, el, e) {
+function onDragStart(idx, cardEl, e) {
   dragFromIndex = idx;
-  el.classList.add('dragging');
+  cardEl.classList.add('dragging');
   try {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(idx));
@@ -493,11 +1009,18 @@ function onDrop(toIdx, targetEl, e) {
   const fromIdx = dragFromIndex ?? Number(e.dataTransfer?.getData('text/plain'));
   if (!Number.isFinite(fromIdx) || fromIdx === toIdx) return;
 
+  const selectedBefore = selectedCardIndex;
   const item = cards.splice(fromIdx, 1)[0];
   cards.splice(toIdx, 0, item);
 
+  if (selectedBefore != null && Number.isFinite(selectedBefore)) {
+    if (selectedBefore === fromIdx) selectedCardIndex = toIdx;
+    else if (fromIdx < selectedBefore && toIdx >= selectedBefore) selectedCardIndex = selectedBefore - 1;
+    else if (fromIdx > selectedBefore && toIdx <= selectedBefore) selectedCardIndex = selectedBefore + 1;
+  }
+
   renderCardsUI();
-  if (!isPreviewing) drawFrame(0);
+  if (!isPreviewing) redrawIdle();
 }
 
 // Icons
@@ -513,6 +1036,15 @@ const ICON_DEL = `
   <path d="M9 7l1-2h4l1 2" stroke="currentColor" stroke-width="2"/>
   <path d="M7 7l1 14h8l1-14" stroke="currentColor" stroke-width="2"/>
 </svg>`;
+const ICON_GRIP = `
+<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+  <circle cx="5.5" cy="4" r="1.25"/>
+  <circle cx="10.5" cy="4" r="1.25"/>
+  <circle cx="5.5" cy="8" r="1.25"/>
+  <circle cx="10.5" cy="8" r="1.25"/>
+  <circle cx="5.5" cy="12" r="1.25"/>
+  <circle cx="10.5" cy="12" r="1.25"/>
+</svg>`;
 
 function renderCardsUI() {
   cardsEl.innerHTML = '';
@@ -522,11 +1054,17 @@ function renderCardsUI() {
 
     const wrap = document.createElement('div');
     wrap.className = 'cardItem';
-    wrap.draggable = true;
+    wrap.dataset.cardIndex = String(idx);
+    if (idx === selectedCardIndex) wrap.classList.add('cardItem-selected');
+    if (!cardHasContent(c)) wrap.classList.add('cardItem-invalid');
+
+    const hasImage = !!c.image?.el;
+    const imageControlsHidden = hasImage ? '' : 'style="display:none;"';
 
     wrap.innerHTML = `
-      <div class="cardTop">
-        <div class="cardIdx">Card ${idx + 1}</div>
+      <div class="cardDragBar">
+        <div class="cardDragHandle" draggable="true" title="Drag to reorder cards">${ICON_GRIP}</div>
+        <div class="cardIdx">Card ${idx + 1}${idx === selectedCardIndex ? ' · editing' : ''}</div>
         <div class="iconRow">
           <button class="iconBtn" data-act="dup" title="Duplicate">${ICON_DUP}</button>
           <button class="iconBtn" data-act="del" title="Delete">${ICON_DEL}</button>
@@ -536,7 +1074,7 @@ function renderCardsUI() {
       <div class="split">
         <label>
           Text
-          <textarea data-field="text"></textarea>
+          <textarea data-field="text" placeholder="Optional if image is set"></textarea>
         </label>
         <label>
           Seconds
@@ -546,18 +1084,8 @@ function renderCardsUI() {
 
       <div class="posRow">
         <label>
-          Position
-          <select data-field="preset">
-            <option value="top-left">Top Left</option>
-            <option value="top">Top</option>
-            <option value="top-right">Top Right</option>
-            <option value="left">Left</option>
-            <option value="center">Center</option>
-            <option value="right">Right</option>
-            <option value="bottom-left">Bottom Left</option>
-            <option value="bottom">Bottom</option>
-            <option value="bottom-right">Bottom Right</option>
-          </select>
+          Text position
+          <select data-field="text-preset">${PRESET_OPTIONS}</select>
         </label>
 
         <label class="check">
@@ -565,31 +1093,111 @@ function renderCardsUI() {
           <span>DVD Mode</span>
         </label>
       </div>
+
+      <div class="cardError" data-field="error" style="display:none;">Cannot be empty — add text or an image.</div>
+
+      <div class="cardImageRow">
+        <label class="cardImageControls">
+          <input data-field="image" type="file" accept="image/*" />
+          <button type="button" class="btn small secondary" data-act="browse">Browse image</button>
+          <button type="button" class="btn small secondary" data-act="clear-image" style="display:none;">Clear</button>
+          <span class="cardImageName" data-field="image-name">No image</span>
+        </label>
+        <img class="cardImagePreview" data-field="image-preview" alt="" style="display:none;" />
+      </div>
+
+      <div class="cardImageControlsPanel" data-field="image-controls" ${imageControlsHidden}>
+        <label>
+          Image size
+          <div class="sliderRow">
+            <input data-field="image-scale" type="range" min="10" max="100" step="1" />
+            <span data-field="image-scale-val">65%</span>
+          </div>
+        </label>
+        <label>
+          Image position
+          <select data-field="image-preset">${PRESET_OPTIONS}</select>
+        </label>
+      </div>
     `;
 
     const ta = wrap.querySelector('textarea[data-field="text"]');
     const dur = wrap.querySelector('input[data-field="duration"]');
-    const presetSel = wrap.querySelector('select[data-field="preset"]');
+    const textPresetSel = wrap.querySelector('select[data-field="text-preset"]');
+    const imagePresetSel = wrap.querySelector('select[data-field="image-preset"]');
+    const imageScale = wrap.querySelector('input[data-field="image-scale"]');
+    const imageScaleVal = wrap.querySelector('[data-field="image-scale-val"]');
+    const imageControls = wrap.querySelector('[data-field="image-controls"]');
     const dvdEl = wrap.querySelector('input[data-field="dvd"]');
+    const imageInput = wrap.querySelector('input[data-field="image"]');
+    const imageName = wrap.querySelector('[data-field="image-name"]');
+    const imagePreview = wrap.querySelector('[data-field="image-preview"]');
+    const errorEl = wrap.querySelector('[data-field="error"]');
+    const browseBtn = wrap.querySelector('button[data-act="browse"]');
+    const clearImageBtn = wrap.querySelector('button[data-act="clear-image"]');
+    const dragHandle = wrap.querySelector('.cardDragHandle');
+
+    const stopCardSelect = (e) => e.stopPropagation();
+
+    for (const el of wrap.querySelectorAll('input, textarea, select, button, .sliderRow, .cardImageControlsPanel')) {
+      el.addEventListener('pointerdown', stopCardSelect);
+      el.addEventListener('mousedown', stopCardSelect);
+    }
+
+    const syncCardValidationUi = () => {
+      const valid = cardHasContent(cards[idx]);
+      wrap.classList.toggle('cardItem-invalid', !valid);
+      errorEl.style.display = valid ? 'none' : 'block';
+      updateActionButtons();
+    };
+
+    const syncImageUi = () => {
+      const img = cards[idx].image;
+      if (img?.el) {
+        imageName.textContent = img.name || 'Image';
+        imagePreview.src = img.url;
+        imagePreview.style.display = 'block';
+        clearImageBtn.style.display = '';
+        imageControls.style.display = '';
+        imagePresetSel.value = getImagePos(cards[idx]).preset;
+        imageScale.value = String(getImageScalePct(cards[idx]));
+        imageScaleVal.textContent = `${getImageScalePct(cards[idx])}%`;
+      } else {
+        imageName.textContent = 'No image';
+        imagePreview.removeAttribute('src');
+        imagePreview.style.display = 'none';
+        clearImageBtn.style.display = 'none';
+        imageInput.value = '';
+        imageControls.style.display = 'none';
+      }
+    };
 
     ta.value = c.text ?? '';
     autosizeTA(ta);
 
     dur.value = Number(c.duration || 0).toString();
-    presetSel.value = c.pos?.preset || 'center';
+    textPresetSel.value = c.pos?.preset || 'center';
+    if (c.image?.el) {
+      imagePresetSel.value = getImagePos(c).preset;
+      imageScale.value = String(getImageScalePct(c));
+      imageScaleVal.textContent = `${getImageScalePct(c)}%`;
+    }
     dvdEl.checked = !!c.pos?.dvd;
 
     const syncDvdUi = () => {
       const dvdOn = !!dvdEl.checked;
-      presetSel.disabled = dvdOn;
-      presetSel.style.opacity = dvdOn ? '0.6' : '1';
+      textPresetSel.disabled = dvdOn;
+      textPresetSel.style.opacity = dvdOn ? '0.6' : '1';
     };
     syncDvdUi();
+    syncImageUi();
+    syncCardValidationUi();
 
     ta.addEventListener('input', () => {
       cards[idx].text = ta.value;
       autosizeTA(ta);
-      if (!isPreviewing) drawFrame(0);
+      syncCardValidationUi();
+      if (!isPreviewing) redrawIdle();
     });
 
     dur.addEventListener('input', () => {
@@ -597,45 +1205,98 @@ function renderCardsUI() {
       updateMeta();
     });
 
-    presetSel.addEventListener('change', () => {
-      cards[idx].pos.preset = presetSel.value;
-      if (!isPreviewing) drawFrame(0);
+    browseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      imageInput.click();
+    });
+
+    imageInput.addEventListener('change', () => {
+      const file = imageInput.files?.[0];
+      if (!file) return;
+      setCardImage(cards[idx], file);
+    });
+
+    clearImageBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      revokeCardImage(cards[idx]);
+      syncImageUi();
+      syncCardValidationUi();
+      if (!isPreviewing) redrawIdle();
+    });
+
+    imageScale.addEventListener('input', () => {
+      if (!cards[idx].image?.el) return;
+      cards[idx].image.scale = clamp(Number(imageScale.value) || 65, 10, 100);
+      imageScaleVal.textContent = `${cards[idx].image.scale}%`;
+      if (!isPreviewing) redrawIdle();
+    });
+
+    imagePresetSel.addEventListener('change', () => {
+      if (!cards[idx].image?.el) return;
+      if (!cards[idx].image.pos) cards[idx].image.pos = { preset: 'center', x: 0.5, y: 0.5 };
+      applyPresetToPos(cards[idx].image.pos, imagePresetSel.value);
+      if (!isPreviewing) redrawIdle();
+    });
+
+    textPresetSel.addEventListener('change', () => {
+      applyPresetToPos(cards[idx].pos, textPresetSel.value);
+      if (!isPreviewing) redrawIdle();
     });
 
     dvdEl.addEventListener('change', () => {
       cards[idx].pos.dvd = !!dvdEl.checked;
       syncDvdUi();
-      if (!isPreviewing) drawFrame(0);
+      if (!isPreviewing) redrawIdle();
     });
 
-    wrap.querySelectorAll('button[data-act]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const act = btn.getAttribute('data-act');
-        if (act === 'del') cards.splice(idx, 1);
-        else if (act === 'dup') cards.splice(idx + 1, 0, JSON.parse(JSON.stringify(cards[idx])));
-
-        renderCardsUI();
-        updateMeta();
-        if (!isPreviewing) drawFrame(0);
-      });
+    wrap.addEventListener('click', (e) => {
+      if (e.target.closest('.cardDragHandle,button,input,textarea,select,label,.sliderRow')) return;
+      setSelectedCard(idx);
     });
 
-    wrap.addEventListener('dragstart', (e) => onDragStart(idx, wrap, e));
-    wrap.addEventListener('dragend', () => onDragEnd(wrap));
+    dragHandle.addEventListener('dragstart', (e) => {
+      e.stopPropagation();
+      onDragStart(idx, wrap, e);
+    });
+    dragHandle.addEventListener('dragend', () => onDragEnd(wrap));
+
     wrap.addEventListener('dragover', (e) => onDragOver(wrap, e));
     wrap.addEventListener('dragleave', () => onDragLeave(wrap));
     wrap.addEventListener('drop', (e) => onDrop(idx, wrap, e));
+
+    wrap.querySelectorAll('button[data-act]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const act = btn.getAttribute('data-act');
+        if (act === 'browse' || act === 'clear-image') return;
+        if (act === 'del') {
+          revokeCardImage(cards[idx]);
+          cards.splice(idx, 1);
+          if (!cards.length) selectedCardIndex = null;
+          else if (selectedCardIndex >= cards.length) selectedCardIndex = cards.length - 1;
+          else if (idx < selectedCardIndex) selectedCardIndex -= 1;
+        } else if (act === 'dup') {
+          cards.splice(idx + 1, 0, cloneCard(cards[idx]));
+        }
+
+        renderCardsUI();
+        updateMeta();
+        if (!isPreviewing) redrawIdle();
+      });
+    });
 
     cardsEl.appendChild(wrap);
   });
 
   updateMeta();
+  updateActionButtons();
 }
 
 btnAdd.addEventListener('click', () => {
   cards.push({ text: 'New card', duration: 2.0, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } });
+  selectedCardIndex = cards.length - 1;
   renderCardsUI();
-  if (!isPreviewing) drawFrame(0);
+  if (!isPreviewing) redrawIdle();
 });
 
 btnLoadExample.addEventListener('click', () => {
@@ -648,12 +1309,15 @@ btnLoadExample.addEventListener('click', () => {
     { text: 'Enjoy.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
     { text: '[your tag here]', duration: 4.0, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
   ];
+  selectedCardIndex = 0;
   renderCardsUI();
-  if (!isPreviewing) drawFrame(0);
+  if (!isPreviewing) redrawIdle();
 });
 
 btnClear.addEventListener('click', () => {
+  cards.forEach(revokeCardImage);
   cards = [];
+  selectedCardIndex = null;
   renderCardsUI();
   drawFrame(0);
 });
@@ -827,7 +1491,7 @@ async function muxToMp4(webmBlob, audioFileObjOrNull) {
 }
 
 btnExport.addEventListener('click', async () => {
-  if (!cards.length) return;
+  if (!isProjectValid()) return;
 
   stopPreview();
   canvas.style.display = 'block';
@@ -880,8 +1544,7 @@ btnExport.addEventListener('click', async () => {
     log(String(err?.message || err));
     setProgress(0);
   } finally {
-    btnPreview.disabled = false;
-    btnExport.disabled = false;
+    updateActionButtons();
   }
 });
 
@@ -890,10 +1553,25 @@ for (const el of [
   bgFitEl, bgDimEl, bgMutePreviewEl, bgLoopEl
 ]) {
   if (!el) continue;
-  el.addEventListener('change', () => { updateMeta(); if (!isPreviewing) drawFrame(0); });
-  el.addEventListener('input',  () => { updateMeta(); if (!isPreviewing) drawFrame(0); });
+  el.addEventListener('change', () => { updateMeta(); if (!isPreviewing) redrawIdle(); });
+  el.addEventListener('input',  () => { updateMeta(); if (!isPreviewing) redrawIdle(); });
 }
+
+function setupDeselectHandlers() {
+  document.addEventListener('click', (e) => {
+    if (selectedCardIndex == null) return;
+    if (e.target.closest('.cardItem')) return;
+    if (e.target.closest('button, a')) return;
+    if (e.target.closest('#canvas, .canvasWrapTop, #resultVideo')) return;
+    deselectCard();
+  });
+}
+
+setupCanvasEditHandlers();
+setupDeselectHandlers();
 
 renderCardsUI();
 updateMeta();
-drawFrame(0);
+updateActionButtons();
+redrawIdle();
+setStatus('Select a card, then drag text (gold) or image (blue) in the preview.');
