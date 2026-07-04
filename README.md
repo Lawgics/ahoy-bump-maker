@@ -23,7 +23,13 @@ Your users already open Plex to watch something. **[ahoy]** makes it easy to mee
 
 ## Demo
 
-![Demo](assets/demo.gif)
+_App walkthrough (screen recording) coming soon._
+
+## Example output
+
+A finished bump from **Load example** — what your Plex users would see:
+
+![Example output](assets/example-output.gif)
 
 ## Features
 
