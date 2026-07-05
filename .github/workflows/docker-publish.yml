@@ -17,6 +17,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Fix UTF-16 Docker files from Windows
+        run: |
+          set -e
+          for f in Dockerfile nginx.conf .dockerignore; do
+            if [ -f "$f" ] && file "$f" | grep -qi utf-16; then
+              echo "Converting $f from UTF-16 to UTF-8"
+              iconv -f UTF-16LE -t UTF-8 "$f" -o "$f.tmp"
+              mv "$f.tmp" "$f"
+            fi
+          done
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
