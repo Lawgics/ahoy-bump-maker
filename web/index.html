@@ -53,7 +53,7 @@
     <!-- CONTROLS BOTTOM -->
     <section class="panel panelBottom">
       <div class="panelGrid">
-        <!-- CARDS -->
+        <!-- CARDS + TEXT STYLE -->
         <div class="panelCol">
           <div class="cardsHeaderRow">
             <h2>Cards</h2>
@@ -69,16 +69,72 @@
           </div>
 
           <div id="cards"></div>
+
+          <div class="box boxSpaced">
+            <h2>Text style</h2>
+            <div class="grid2">
+              <label>
+                Font family
+                <input id="fontFamily" type="text" value="Helvetica Neue, Arial, sans-serif" />
+              </label>
+
+              <label>
+                Font size (px)
+                <input id="fontSize" type="number" min="12" max="200" value="96" />
+              </label>
+
+              <label class="check">
+                <input id="enableFade" type="checkbox" />
+                <span>Quick fade (0.18s)</span>
+              </label>
+
+              <label class="check">
+                <input id="enableGrain" type="checkbox" />
+                <span>Light grain</span>
+              </label>
+            </div>
+            <div class="hint">
+              Default text style for new cards. Override font or size on individual cards below.
+              Fade applies when cards appear. Grain is a light texture over the full frame.
+            </div>
+          </div>
         </div>
 
-        <!-- SETTINGS -->
-        <div class="panelCol">
+        <!-- OUTPUT + MEDIA -->
+        <div class="panelCol settingsCol">
+          <div class="box">
+            <h2>Output</h2>
+            <div class="grid2">
+              <label>
+                Resolution
+                <select id="resolution">
+                  <option value="1920x1080" selected>1920×1080 (1080p)</option>
+                  <option value="1280x720">1280×720 (720p)</option>
+                  <option value="854x480">854×480 (480p)</option>
+                </select>
+              </label>
+
+              <label>
+                FPS
+                <select id="fps">
+                  <option value="24">24</option>
+                  <option value="30" selected>30</option>
+                  <option value="60">60</option>
+                </select>
+              </label>
+            </div>
+            <div class="hint">
+              Sets preview and export size for the whole bump. Font size scales automatically when
+              you change resolution. Backgrounds and card images scale with the canvas.
+            </div>
+          </div>
+
           <div class="twoUp">
             <div class="box">
               <h2>Audio (optional)</h2>
               <input id="audioFile" type="file" accept="audio/*" />
-              <div class="hint">
-                Upload a song/beat. Export will mux it into the MP4 (trimmed to bump length).
+              <div class="hint" style="margin-top:8px;">
+                Upload a song/beat. Plays during Preview and is included in Export.
               </div>
               <audio id="audioPlayer" controls></audio>
             </div>
@@ -103,61 +159,25 @@
                   Opacity (0–100%)
                   <input id="bgDim" type="number" min="0" max="100" value="0" />
                 </label>
+              </div>
 
-                <label class="check">
-                  <input id="bgMutePreview" type="checkbox" checked />
-                  <span>Mute bg video (preview)</span>
-                </label>
+              <div id="bgVideoOptions" style="display:none; margin-top:10px;">
+                <div class="grid2">
+                  <label class="check">
+                    <input id="bgMutePreview" type="checkbox" checked />
+                    <span>Mute background video sound</span>
+                  </label>
 
-                <label class="check">
-                  <input id="bgLoop" type="checkbox" checked />
-                  <span>Loop bg video</span>
-                </label>
+                  <label class="check">
+                    <input id="bgLoop" type="checkbox" checked />
+                    <span>Loop background video</span>
+                  </label>
+                </div>
+                <div class="hint">
+                  Video backgrounds only — does not affect your uploaded music.
+                </div>
               </div>
             </div>
-          </div>
-
-          <hr />
-
-          <h2>Look</h2>
-          <div class="grid2">
-            <label>
-              Resolution
-              <select id="resolution">
-                <option value="1920x1080" selected>1920×1080 (1080p)</option>
-                <option value="1280x720">1280×720 (720p)</option>
-                <option value="854x480">854×480 (480p)</option>
-              </select>
-            </label>
-
-            <label>
-              FPS
-              <select id="fps">
-                <option value="24">24</option>
-                <option value="30" selected>30</option>
-                <option value="60">60</option>
-              </select>
-            </label>
-
-            <label>
-              Font family
-              <input id="fontFamily" type="text" value="Helvetica Neue, Arial, sans-serif" />
-            </label>
-
-            <label>
-              Font size (px)
-              <input id="fontSize" type="number" min="12" max="200" value="96" />
-            </label>
-
-            <label class="check">
-              <input id="enableFade" type="checkbox" />
-              <span>Quick fade (0.18s)</span>
-            </label>
-
-            <label class="check">
-              <input id="enableGrain" type="checkbox" />
-              <span>Light grain</span>
-            </label>
           </div>
         </div>
       </div>

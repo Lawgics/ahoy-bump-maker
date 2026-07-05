@@ -112,8 +112,40 @@ function getEditTimeForCard(idx) {
   return t + 0.05;
 }
 
+function getIdlePreviewCardIndex() {
+  if (selectedCardIndex != null && cards[selectedCardIndex]) return selectedCardIndex;
+  if (
+    lastSelectedCardIndex != null &&
+    lastSelectedCardIndex >= 0 &&
+    lastSelectedCardIndex < cards.length
+  ) return lastSelectedCardIndex;
+  return cards.length ? 0 : -1;
+}
+
+function getIdlePreviewTime() {
+  const idx = getIdlePreviewCardIndex();
+  return idx < 0 ? 0 : getEditTimeForCard(idx);
+}
+
+function adjustCardIndexAfterRemoval(idx, removedAt) {
+  if (idx == null) return null;
+  if (!cards.length) return null;
+  if (idx >= cards.length) return cards.length - 1;
+  if (removedAt < idx) return idx - 1;
+  return idx;
+}
+
+function adjustCardIndexAfterReorder(idx, fromIdx, toIdx) {
+  if (idx == null) return null;
+  if (idx === fromIdx) return toIdx;
+  if (fromIdx < idx && toIdx >= idx) return idx - 1;
+  if (fromIdx > idx && toIdx <= idx) return idx + 1;
+  return idx;
+}
+
 function deselectCard() {
   if (selectedCardIndex == null) return;
+  lastSelectedCardIndex = selectedCardIndex;
   selectedCardIndex = null;
   editDrag = null;
   snapGuides = { vertical: null, horizontal: null };
@@ -127,6 +159,7 @@ function deselectCard() {
 function setSelectedCard(idx) {
   if (!Number.isFinite(idx) || idx < 0 || idx >= cards.length) return;
   selectedCardIndex = idx;
+  lastSelectedCardIndex = idx;
   renderCardsUI();
   if (!isPreviewing) {
     refreshEditView();
@@ -138,7 +171,7 @@ function refreshEditView() {
   if (isPreviewing) return;
   canvas.classList.remove('editMode');
   if (selectedCardIndex == null || !cards[selectedCardIndex]) {
-    drawFrame(0);
+    drawFrame(getIdlePreviewTime());
     return;
   }
   canvas.classList.add('editMode');
@@ -174,18 +207,15 @@ function getBgOpacity01() {
   return clamp(v / 100, 0, 1);
 }
 
-// Default template
-let cards = [
-  { text: 'Welcome back.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-  { text: 'This bump was made in a browser.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-  { text: 'It has no budget. Please respect that.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-  { text: '[your tag here]', duration: 4.0, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-];
+// Card timeline (populated on load via loadExampleCards)
+let cards = [];
 
 let isPreviewing = false;
+let isExporting = false;
 let rafId = null;
 let previewStartMs = 0;
 let selectedCardIndex = 0;
+let lastSelectedCardIndex = 0;
 let editDrag = null;
 let snapGuides = { vertical: null, horizontal: null };
 
@@ -195,6 +225,21 @@ let ffmpeg = null;
 let ffmpegLoaded = false;
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+
+/** Suggested on-screen time from text length (~145 wpm, AS-style pacing). */
+function suggestCardDuration(card) {
+  const text = (card?.text || '').trim();
+  if (!text) return card?.image?.el ? 3.0 : 2.0;
+
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const chars = text.length;
+  const fromWords = (words / 145) * 60;
+  const fromChars = chars / 14;
+  let seconds = Math.max(fromWords, fromChars) + 0.5;
+  if (card?.image?.el) seconds += 0.75;
+  seconds = clamp(seconds, 2.0, 8.0);
+  return Math.round(seconds * 2) / 2;
+}
 
 function setStatus(msg) { statusLine.textContent = msg; }
 
@@ -217,6 +262,70 @@ function getSettings() {
   const enableFade = !!enableFadeEl.checked;
   const enableGrain = !!enableGrainEl.checked;
   return { w, h, fps, fontFamily, fontSize, enableFade, enableGrain };
+}
+
+function getDefaultTextStyle() {
+  const fontFamily = fontFamilyEl.value.trim() || 'Helvetica Neue, Arial, sans-serif';
+  const fontSize = clamp(parseInt(fontSizeEl.value, 10) || 96, 12, 200);
+  return { fontFamily, fontSize };
+}
+
+function getCardTextStyle(card) {
+  const defaults = getDefaultTextStyle();
+  const family = (card?.fontFamily || '').trim();
+  const size = Number(card?.fontSize);
+  return {
+    fontFamily: family || defaults.fontFamily,
+    fontSize: Number.isFinite(size) && size > 0
+      ? clamp(size, 12, 200)
+      : defaults.fontSize,
+  };
+}
+
+function cardUsesCustomTextStyle(card) {
+  const family = (card?.fontFamily || '').trim();
+  const size = Number(card?.fontSize);
+  return !!family || (Number.isFinite(size) && size > 0);
+}
+
+function scaleFontSizeValue(size, oldH, newH) {
+  if (!Number.isFinite(size) || size <= 0 || oldH <= 0 || newH === oldH) return size;
+  return clamp(Math.round(size * (newH / oldH)), 12, 200);
+}
+
+function parseResolution(value) {
+  const [w, h] = (value || resolutionSel?.value || '1920x1080').split('x').map(n => parseInt(n, 10));
+  return { w, h };
+}
+
+let lastResolutionForFont = null;
+
+function initFontResolutionTracking() {
+  lastResolutionForFont = parseResolution(resolutionSel?.value);
+}
+
+function scaleFontSizeOnResolutionChange() {
+  const newRes = parseResolution(resolutionSel?.value);
+  if (!fontSizeEl) {
+    lastResolutionForFont = newRes;
+    return;
+  }
+  if (lastResolutionForFont) {
+    const oldH = lastResolutionForFont.h;
+    const newH = newRes.h;
+    if (oldH > 0 && newH !== oldH) {
+      const current = parseInt(fontSizeEl.value, 10) || 96;
+      fontSizeEl.value = String(scaleFontSizeValue(current, oldH, newH));
+      for (const card of cards) {
+        const size = Number(card?.fontSize);
+        if (Number.isFinite(size) && size > 0) {
+          card.fontSize = scaleFontSizeValue(size, oldH, newH);
+        }
+      }
+      renderCardsUI();
+    }
+  }
+  lastResolutionForFont = newRes;
 }
 
 function totalDuration() {
@@ -255,23 +364,55 @@ function computeActiveCard(t) {
   return null;
 }
 
+function isImageFile(file) {
+  if (file.type?.startsWith('image/')) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name || '');
+}
+
+function isVideoFile(file) {
+  if (file.type?.startsWith('video/')) return true;
+  return /\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/i.test(file.name || '');
+}
+
+function refreshCanvasFromSettings() {
+  if (isPreviewing) {
+    const t = clamp((performance.now() - previewStartMs) / 1000, 0, totalDuration());
+    drawFrame(t);
+  } else {
+    redrawIdle();
+  }
+}
+
 function drawGrain(w, h) {
-  const grain = 1800;
+  const count = Math.round((w * h) / 520);
   ctx.save();
-  ctx.globalAlpha = 0.06;
-  for (let i = 0; i < grain; i++) {
+  for (let i = 0; i < count; i++) {
     const x = Math.random() * w;
     const y = Math.random() * h;
-    const a = Math.random() * 0.6;
-    const s = Math.random() * 2 + 0.5;
-    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    const lum = 125 + Math.floor(Math.random() * 95);
+    const a = 0.11 + Math.random() * 0.24;
+    const s = Math.random() * 2.6 + 0.8;
+    ctx.fillStyle = `rgba(${lum},${lum},${lum},${a})`;
     ctx.fillRect(x, y, s, s);
   }
   ctx.restore();
 }
 
+function shouldBgVideoPlay() {
+  return isPreviewing || isExporting;
+}
+
+function pauseBgVideoForIdle() {
+  if (bg.type !== 'video' || !bg.el || shouldBgVideoPlay()) return;
+  const vid = bg.el;
+  try {
+    if (!vid.paused) vid.pause();
+    if (vid.currentTime !== 0) vid.currentTime = 0;
+  } catch {}
+}
+
 function drawFrame(tSeconds) {
-  const { w, h, fontFamily, fontSize, enableFade, enableGrain } = getSettings();
+  const { w, h, enableFade, enableGrain } = getSettings();
 
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
@@ -289,7 +430,11 @@ function drawFrame(tSeconds) {
     ctx.drawImage(img, r.x, r.y, r.w, r.h);
   } else if (bg.type === 'video' && bg.el) {
     const vid = bg.el;
-    if (isPreviewing && vid.paused) { try { vid.play(); } catch {} }
+    if (shouldBgVideoPlay()) {
+      if (vid.paused) { try { vid.play(); } catch {} }
+    } else {
+      pauseBgVideoForIdle();
+    }
     const r = drawCoverOrContain(vid.videoWidth || w, vid.videoHeight || h, w, h, fitMode);
     try { ctx.drawImage(vid, r.x, r.y, r.w, r.h); } catch {}
   }
@@ -316,13 +461,15 @@ function drawFrame(tSeconds) {
 
   const text = escapeText(card.text || '').trim();
   if (!text) {
-    if (enableGrain) drawGrain(w, h);
     drawEditChrome(card, w, h);
+    if (enableGrain) drawGrain(w, h);
     return;
   }
 
-  drawCardText(card, w, h, contentAlpha, { fontFamily, fontSize, enableGrain, tSeconds, active });
+  const textStyle = getCardTextStyle(card);
+  drawCardText(card, w, h, contentAlpha, { ...textStyle, tSeconds, active });
   drawEditChrome(card, w, h);
+  if (enableGrain) drawGrain(w, h);
 }
 
 function measureTextBlock(card, w, h, fontFamily, fontSize) {
@@ -379,7 +526,7 @@ function getTextRect(card, w, h, settings) {
 }
 
 function drawCardText(card, w, h, contentAlpha, settings) {
-  const { fontFamily, fontSize, enableGrain, tSeconds = 0, active = null } = settings;
+  const { fontFamily, fontSize, tSeconds = 0, active = null } = settings;
   const block = measureTextBlock(card, w, h, fontFamily, fontSize);
   if (!block) return;
 
@@ -430,7 +577,6 @@ function drawCardText(card, w, h, contentAlpha, settings) {
       y += block.size * block.lineHeight;
     }
     ctx.globalAlpha = 1;
-    if (enableGrain) drawGrain(w, h);
     return;
   }
 
@@ -463,7 +609,6 @@ function drawCardText(card, w, h, contentAlpha, settings) {
   }
 
   ctx.globalAlpha = 1;
-  if (enableGrain) drawGrain(w, h);
 }
 
 function drawEditChrome(card, w, h) {
@@ -471,7 +616,7 @@ function drawEditChrome(card, w, h) {
   const idx = cards.indexOf(card);
   if (idx !== selectedCardIndex) return;
 
-  const settings = getSettings();
+  const settings = getCardTextStyle(card);
   const lineW = Math.max(2, w / 540);
   const handle = Math.max(12, w / 100);
 
@@ -521,12 +666,12 @@ function drawSnapGuides(w, h) {
   ctx.restore();
 }
 
-function getAlignmentTargets(card, w, h, settings, excludeKind) {
+function getAlignmentTargets(card, w, h, excludeKind) {
   const xs = [w * 0.5];
   const ys = [h * 0.5];
 
   if (excludeKind !== 'text') {
-    const tr = getTextRect(card, w, h, settings);
+    const tr = getTextRect(card, w, h, getCardTextStyle(card));
     if (tr) {
       xs.push(tr.left + tr.w / 2);
       ys.push(tr.top + tr.h / 2);
@@ -554,9 +699,9 @@ function snapAxis(value, targets, threshold) {
   return best;
 }
 
-function applySnapToCenter(cx, cy, card, w, h, settings, excludeKind) {
+function applySnapToCenter(cx, cy, card, w, h, excludeKind) {
   const threshold = Math.max(10, w * SNAP_THRESHOLD_RATIO);
-  const { xs, ys } = getAlignmentTargets(card, w, h, settings, excludeKind);
+  const { xs, ys } = getAlignmentTargets(card, w, h, excludeKind);
   const sx = snapAxis(cx, xs, threshold);
   const sy = snapAxis(cy, ys, threshold);
   snapGuides = {
@@ -596,7 +741,7 @@ function drawCardImage(card, w, h, alpha) {
 }
 
 function hitTestEdit(px, py, card, w, h) {
-  const settings = getSettings();
+  const settings = getCardTextStyle(card);
   const handle = Math.max(12, w / 100);
   const ir = computeImageRect(card, w, h);
 
@@ -690,8 +835,7 @@ function setupCanvasEditHandlers() {
       };
     } else {
       const pos = getCardPos(card);
-      const settings = getSettings();
-      const { w, h } = settings;
+      const settings = getCardTextStyle(card);
       let origX = pos.x;
       let origY = pos.y;
       const tr = getTextRect(card, w, h, settings);
@@ -716,8 +860,7 @@ function setupCanvasEditHandlers() {
     const card = cards[selectedCardIndex];
     if (!card) return;
 
-    const settings = getSettings();
-    const { w, h } = settings;
+    const { w, h } = getSettings();
     const p = canvasPointFromEvent(e);
 
     if (editDrag.kind === 'image' && editDrag.mode === 'scale') {
@@ -733,7 +876,7 @@ function setupCanvasEditHandlers() {
       if (!card.image.pos) card.image.pos = { preset: 'center', x: 0.5, y: 0.5 };
       let cx = editDrag.origX * w + dx;
       let cy = editDrag.origY * h + dy;
-      const snapped = applySnapToCenter(cx, cy, card, w, h, settings, 'image');
+      const snapped = applySnapToCenter(cx, cy, card, w, h, 'image');
       card.image.pos.preset = 'custom';
       card.image.pos.x = clamp(snapped.cx / w, 0.05, 0.95);
       card.image.pos.y = clamp(snapped.cy / h, 0.05, 0.95);
@@ -743,7 +886,7 @@ function setupCanvasEditHandlers() {
       const dy = p.y - editDrag.startY;
       let cx = editDrag.origX * w + dx;
       let cy = editDrag.origY * h + dy;
-      const snapped = applySnapToCenter(cx, cy, card, w, h, settings, 'text');
+      const snapped = applySnapToCenter(cx, cy, card, w, h, 'text');
       card.pos.preset = 'custom';
       card.pos.x = clamp(snapped.cx / w, 0.05, 0.95);
       card.pos.y = clamp(snapped.cy / h, 0.05, 0.95);
@@ -830,11 +973,48 @@ audioFile.addEventListener('change', async (e) => {
 });
 
 // Background upload
+function syncBgVideoControls() {
+  const isVideo = bg.type === 'video' && bg.el;
+  const opts = $('#bgVideoOptions');
+  if (opts) opts.style.display = isVideo ? 'block' : 'none';
+  if (!isVideo) return;
+
+  const mute = !!bgMutePreviewEl?.checked;
+  const loop = !!bgLoopEl?.checked;
+  bg.el.loop = loop;
+  bg.el.muted = mute;
+  bg.el.volume = mute ? 0 : 1;
+  pauseBgVideoForIdle();
+}
+
+function attachBackgroundVideo(vid, url) {
+  let ready = false;
+  const onReady = () => {
+    if (ready) return;
+    ready = true;
+    bg = { type: 'video', url, el: vid };
+    syncBgVideoControls();
+    try { vid.currentTime = 0; } catch {}
+    try { vid.pause(); } catch {}
+    refreshCanvasFromSettings();
+  };
+
+  vid.addEventListener('loadedmetadata', onReady);
+  vid.addEventListener('loadeddata', onReady);
+  vid.addEventListener('error', () => {
+    setStatus('Could not load background video.');
+    bg = { type: 'none', url: null, el: null };
+    syncBgVideoControls();
+  });
+  vid.load();
+}
+
 bgFile?.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
   if (!file) {
     if (bg.url) URL.revokeObjectURL(bg.url);
     bg = { type: 'none', url: null, el: null };
+    syncBgVideoControls();
     if (!isPreviewing) redrawIdle();
     return;
   }
@@ -842,39 +1022,39 @@ bgFile?.addEventListener('change', async (e) => {
   if (bg.url) URL.revokeObjectURL(bg.url);
   const url = URL.createObjectURL(file);
 
-  if (file.type.startsWith('image/')) {
+  if (isImageFile(file)) {
     const img = new Image();
-    img.onload = () => { bg = { type: 'image', url, el: img }; if (!isPreviewing) redrawIdle(); };
+    img.onload = () => {
+      bg = { type: 'image', url, el: img };
+      syncBgVideoControls();
+      refreshCanvasFromSettings();
+    };
+    img.onerror = () => setStatus('Could not load background image.');
     img.src = url;
     return;
   }
 
-  if (file.type.startsWith('video/')) {
+  if (isVideoFile(file)) {
     const vid = document.createElement('video');
     vid.src = url;
     vid.playsInline = true;
     vid.preload = 'auto';
-    vid.loop = !!bgLoopEl?.checked;
-    vid.muted = !!bgMutePreviewEl?.checked;
-    vid.volume = 0;
-
-    vid.addEventListener('loadedmetadata', async () => {
-      bg = { type: 'video', url, el: vid };
-      try { vid.currentTime = 0; } catch {}
-      try { await vid.play(); } catch {}
-      if (!isPreviewing) redrawIdle();
-    });
+    attachBackgroundVideo(vid, url);
     return;
   }
 
+  setStatus('Unsupported background file. Try MP4, WebM, MOV, PNG, or JPG.');
+
   bg = { type: 'none', url: null, el: null };
+  syncBgVideoControls();
 });
 
 bgLoopEl?.addEventListener('change', () => {
-  if (bg.type === 'video' && bg.el) bg.el.loop = !!bgLoopEl.checked;
+  syncBgVideoControls();
+  refreshCanvasFromSettings();
 });
 bgMutePreviewEl?.addEventListener('change', () => {
-  if (bg.type === 'video' && bg.el) bg.el.muted = !!bgMutePreviewEl.checked;
+  syncBgVideoControls();
 });
 
 function ensureCardDefaults(card) {
@@ -925,6 +1105,10 @@ function cloneCard(card) {
     pos: { ...card.pos },
     image: null,
   };
+  const family = (card.fontFamily || '').trim();
+  const size = Number(card.fontSize);
+  if (family) copy.fontFamily = family;
+  if (Number.isFinite(size) && size > 0) copy.fontSize = size;
   if (card.image?.url && card.image?.el) {
     copy.image = {
       url: card.image.url,
@@ -962,13 +1146,30 @@ function setCardImage(card, file) {
   img.src = url;
 }
 
+function setCardImageFromUrl(card, src, name, { scale = 58, pos = { preset: 'center', x: 0.5, y: 0.42 } } = {}) {
+  revokeCardImage(card);
+  const img = new Image();
+  img.onload = () => {
+    card.image = {
+      url: src,
+      el: img,
+      name: name || 'image',
+      scale,
+      pos: { ...pos },
+    };
+    renderCardsUI();
+    if (!isPreviewing) redrawIdle();
+  };
+  img.onerror = () => {
+    card.image = null;
+    renderCardsUI();
+  };
+  img.src = src;
+}
+
 function redrawIdle() {
   if (isPreviewing) return;
-  if (selectedCardIndex != null && cards[selectedCardIndex]) {
-    drawFrame(getEditTimeForCard(selectedCardIndex));
-  } else {
-    drawFrame(0);
-  }
+  drawFrame(getIdlePreviewTime());
 }
 
 function getCardContentAlpha(active, tSeconds, enableFade) {
@@ -1010,13 +1211,15 @@ function onDrop(toIdx, targetEl, e) {
   if (!Number.isFinite(fromIdx) || fromIdx === toIdx) return;
 
   const selectedBefore = selectedCardIndex;
+  const lastBefore = lastSelectedCardIndex;
   const item = cards.splice(fromIdx, 1)[0];
   cards.splice(toIdx, 0, item);
 
   if (selectedBefore != null && Number.isFinite(selectedBefore)) {
-    if (selectedBefore === fromIdx) selectedCardIndex = toIdx;
-    else if (fromIdx < selectedBefore && toIdx >= selectedBefore) selectedCardIndex = selectedBefore - 1;
-    else if (fromIdx > selectedBefore && toIdx <= selectedBefore) selectedCardIndex = selectedBefore + 1;
+    selectedCardIndex = adjustCardIndexAfterReorder(selectedBefore, fromIdx, toIdx);
+  }
+  if (lastBefore != null && Number.isFinite(lastBefore)) {
+    lastSelectedCardIndex = adjustCardIndexAfterReorder(lastBefore, fromIdx, toIdx);
   }
 
   renderCardsUI();
@@ -1076,9 +1279,12 @@ function renderCardsUI() {
           Text
           <textarea data-field="text" placeholder="Optional if image is set"></textarea>
         </label>
-        <label>
+        <label class="durationField">
           Seconds
           <input data-field="duration" type="number" min="0.1" step="0.1" />
+          <div class="durationSuggest" data-field="duration-suggest">
+            <span class="durationSuggestVal" data-field="duration-suggest-val" role="button" tabindex="0" title="Click to apply suggested duration"></span>
+          </div>
         </label>
       </div>
 
@@ -1087,12 +1293,19 @@ function renderCardsUI() {
           Text position
           <select data-field="text-preset">${PRESET_OPTIONS}</select>
         </label>
+      </div>
 
-        <label class="check">
-          <input data-field="dvd" type="checkbox" />
-          <span>DVD Mode</span>
+      <div class="fontRow">
+        <label>
+          Font override
+          <input data-field="font-family" type="text" placeholder="Default" />
+        </label>
+        <label>
+          Size override
+          <input data-field="font-size" type="number" min="12" max="200" placeholder="Default" />
         </label>
       </div>
+      <div class="hint cardFontHint">Leave blank to use Text style defaults for this card.</div>
 
       <div class="cardError" data-field="error" style="display:none;">Cannot be empty — add text or an image.</div>
 
@@ -1123,12 +1336,14 @@ function renderCardsUI() {
 
     const ta = wrap.querySelector('textarea[data-field="text"]');
     const dur = wrap.querySelector('input[data-field="duration"]');
+    const durationSuggestVal = wrap.querySelector('[data-field="duration-suggest-val"]');
     const textPresetSel = wrap.querySelector('select[data-field="text-preset"]');
+    const fontFamilyInput = wrap.querySelector('input[data-field="font-family"]');
+    const fontSizeInput = wrap.querySelector('input[data-field="font-size"]');
     const imagePresetSel = wrap.querySelector('select[data-field="image-preset"]');
     const imageScale = wrap.querySelector('input[data-field="image-scale"]');
     const imageScaleVal = wrap.querySelector('[data-field="image-scale-val"]');
     const imageControls = wrap.querySelector('[data-field="image-controls"]');
-    const dvdEl = wrap.querySelector('input[data-field="dvd"]');
     const imageInput = wrap.querySelector('input[data-field="image"]');
     const imageName = wrap.querySelector('[data-field="image-name"]');
     const imagePreview = wrap.querySelector('[data-field="image-preview"]');
@@ -1139,7 +1354,7 @@ function renderCardsUI() {
 
     const stopCardSelect = (e) => e.stopPropagation();
 
-    for (const el of wrap.querySelectorAll('input, textarea, select, button, .sliderRow, .cardImageControlsPanel')) {
+    for (const el of wrap.querySelectorAll('input, textarea, select, button, .sliderRow, .cardImageControlsPanel, .durationSuggestVal')) {
       el.addEventListener('pointerdown', stopCardSelect);
       el.addEventListener('mousedown', stopCardSelect);
     }
@@ -1172,37 +1387,67 @@ function renderCardsUI() {
       }
     };
 
+    const syncDurationSuggest = () => {
+      const suggested = suggestCardDuration(cards[idx]);
+      const current = Number(cards[idx].duration || 0);
+      const matches = Math.abs(current - suggested) < 0.05;
+      durationSuggestVal.textContent = `Suggested: ${suggested.toFixed(1)}s`;
+      durationSuggestVal.classList.toggle('durationSuggestVal-applied', matches);
+      durationSuggestVal.setAttribute('aria-disabled', matches ? 'true' : 'false');
+    };
+
+    const applySuggestedDuration = () => {
+      const suggested = suggestCardDuration(cards[idx]);
+      const current = Number(cards[idx].duration || 0);
+      if (Math.abs(current - suggested) < 0.05) return;
+      cards[idx].duration = suggested;
+      dur.value = suggested.toFixed(1);
+      syncDurationSuggest();
+      updateMeta();
+    };
+
     ta.value = c.text ?? '';
     autosizeTA(ta);
 
     dur.value = Number(c.duration || 0).toString();
     textPresetSel.value = c.pos?.preset || 'center';
+    fontFamilyInput.value = (c.fontFamily || '').trim();
+    fontSizeInput.value = Number.isFinite(Number(c.fontSize)) && Number(c.fontSize) > 0
+      ? String(c.fontSize)
+      : '';
     if (c.image?.el) {
       imagePresetSel.value = getImagePos(c).preset;
       imageScale.value = String(getImageScalePct(c));
       imageScaleVal.textContent = `${getImageScalePct(c)}%`;
     }
-    dvdEl.checked = !!c.pos?.dvd;
-
-    const syncDvdUi = () => {
-      const dvdOn = !!dvdEl.checked;
-      textPresetSel.disabled = dvdOn;
-      textPresetSel.style.opacity = dvdOn ? '0.6' : '1';
-    };
-    syncDvdUi();
     syncImageUi();
     syncCardValidationUi();
+    syncDurationSuggest();
 
     ta.addEventListener('input', () => {
       cards[idx].text = ta.value;
       autosizeTA(ta);
       syncCardValidationUi();
+      syncDurationSuggest();
       if (!isPreviewing) redrawIdle();
     });
 
     dur.addEventListener('input', () => {
       cards[idx].duration = Math.max(0.1, Number(dur.value || 0.1));
+      syncDurationSuggest();
       updateMeta();
+    });
+
+    durationSuggestVal.addEventListener('click', (e) => {
+      e.stopPropagation();
+      applySuggestedDuration();
+    });
+
+    durationSuggestVal.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      e.stopPropagation();
+      applySuggestedDuration();
     });
 
     browseBtn.addEventListener('click', (e) => {
@@ -1214,6 +1459,7 @@ function renderCardsUI() {
       const file = imageInput.files?.[0];
       if (!file) return;
       setCardImage(cards[idx], file);
+      syncDurationSuggest();
     });
 
     clearImageBtn.addEventListener('click', (e) => {
@@ -1221,6 +1467,7 @@ function renderCardsUI() {
       revokeCardImage(cards[idx]);
       syncImageUi();
       syncCardValidationUi();
+      syncDurationSuggest();
       if (!isPreviewing) redrawIdle();
     });
 
@@ -1243,14 +1490,22 @@ function renderCardsUI() {
       if (!isPreviewing) redrawIdle();
     });
 
-    dvdEl.addEventListener('change', () => {
-      cards[idx].pos.dvd = !!dvdEl.checked;
-      syncDvdUi();
+    const syncCardFontFromInputs = () => {
+      const family = fontFamilyInput.value.trim();
+      const size = Number(fontSizeInput.value);
+      cards[idx].fontFamily = family || undefined;
+      if (Number.isFinite(size) && size > 0) cards[idx].fontSize = clamp(size, 12, 200);
+      else delete cards[idx].fontSize;
+      wrap.classList.toggle('cardItem-customFont', cardUsesCustomTextStyle(cards[idx]));
       if (!isPreviewing) redrawIdle();
-    });
+    };
+
+    fontFamilyInput.addEventListener('input', syncCardFontFromInputs);
+    fontSizeInput.addEventListener('input', syncCardFontFromInputs);
+    wrap.classList.toggle('cardItem-customFont', cardUsesCustomTextStyle(c));
 
     wrap.addEventListener('click', (e) => {
-      if (e.target.closest('.cardDragHandle,button,input,textarea,select,label,.sliderRow')) return;
+      if (e.target.closest('.cardDragHandle,button,input,textarea,select,label,.sliderRow,.durationSuggestVal')) return;
       setSelectedCard(idx);
     });
 
@@ -1272,9 +1527,13 @@ function renderCardsUI() {
         if (act === 'del') {
           revokeCardImage(cards[idx]);
           cards.splice(idx, 1);
-          if (!cards.length) selectedCardIndex = null;
-          else if (selectedCardIndex >= cards.length) selectedCardIndex = cards.length - 1;
-          else if (idx < selectedCardIndex) selectedCardIndex -= 1;
+          if (!cards.length) {
+            selectedCardIndex = null;
+            lastSelectedCardIndex = null;
+          } else {
+            selectedCardIndex = adjustCardIndexAfterRemoval(selectedCardIndex, idx);
+            lastSelectedCardIndex = adjustCardIndexAfterRemoval(lastSelectedCardIndex, idx);
+          }
         } else if (act === 'dup') {
           cards.splice(idx + 1, 0, cloneCard(cards[idx]));
         }
@@ -1299,25 +1558,39 @@ btnAdd.addEventListener('click', () => {
   if (!isPreviewing) redrawIdle();
 });
 
-btnLoadExample.addEventListener('click', () => {
+function loadExampleCards() {
+  cards.forEach(revokeCardImage);
   cards = [
-    { text: 'Welcome back.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-    { text: 'This is a handmade commercial.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-    { text: 'It sells nothing.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-    { text: 'Tunarr will now pretend it\'s cable.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-    { text: 'You will pretend you didn\'t notice.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-    { text: 'Enjoy.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
-    { text: '[your tag here]', duration: 4.0, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
+    { text: 'Ahoy.', duration: 2.0, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
+    { text: 'Got something to tell you.', duration: 2.5, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
+    { text: 'Server maintenance. Sunday. 2-4am.', duration: 3.0, pos: { preset: 'center', x: 0.5, y: 0.48, dvd: false } },
+    { text: 'Sorry for intruding on the free content I\'m providing.', duration: 3.0, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
+    {
+      text: '[ahoy]',
+      duration: 3.5,
+      pos: { preset: 'custom', x: 0.5, y: 0.73, dvd: false },
+      fontSize: 52,
+    },
   ];
   selectedCardIndex = 0;
+  lastSelectedCardIndex = 0;
   renderCardsUI();
+  setCardImageFromUrl(cards[4], './assets/example-pirate-dog.png', 'example-pirate-dog.png', {
+    scale: 48,
+    pos: { preset: 'custom', x: 0.5, y: 0.5 },
+  });
   if (!isPreviewing) redrawIdle();
+}
+
+btnLoadExample.addEventListener('click', () => {
+  loadExampleCards();
 });
 
 btnClear.addEventListener('click', () => {
   cards.forEach(revokeCardImage);
   cards = [];
   selectedCardIndex = null;
+  lastSelectedCardIndex = null;
   renderCardsUI();
   drawFrame(0);
 });
@@ -1325,63 +1598,69 @@ btnClear.addEventListener('click', () => {
 /* ---- Progress bar fix ---- */
 async function recordCanvasToBlob({ mimeType, includeAudio }) {
   const { fps } = getSettings();
-  drawFrame(0);
+  isExporting = true;
+  try {
+    drawFrame(0);
 
-  const stream = canvas.captureStream(fps);
+    const stream = canvas.captureStream(fps);
 
-  let audioWasStarted = false;
-  if (includeAudio && audioPlayer?.src && typeof audioPlayer.captureStream === 'function') {
-    try {
-      audioPlayer.currentTime = 0;
-      await audioPlayer.play();
-      audioWasStarted = true;
+    let audioWasStarted = false;
+    if (includeAudio && audioPlayer?.src && typeof audioPlayer.captureStream === 'function') {
+      try {
+        audioPlayer.currentTime = 0;
+        await audioPlayer.play();
+        audioWasStarted = true;
 
-      const astream = audioPlayer.captureStream();
-      for (const track of astream.getAudioTracks()) stream.addTrack(track);
-    } catch {
-      log('Audio captureStream failed, continuing without embedded audio...');
+        const astream = audioPlayer.captureStream();
+        for (const track of astream.getAudioTracks()) stream.addTrack(track);
+      } catch {
+        log('Audio captureStream failed, continuing without embedded audio...');
+      }
     }
+
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+
+    let resolveStop;
+    const stopped = new Promise((res) => resolveStop = res);
+    recorder.onstop = () => resolveStop();
+
+    if (bg.type === 'video' && bg.el) {
+      try { bg.el.currentTime = 0; } catch {}
+      try { await bg.el.play(); } catch {}
+    }
+
+    recorder.start(200);
+
+    const dur = totalDuration();
+    const startMs = performance.now();
+
+    setStatus('Recording...');
+    while (true) {
+      const t = (performance.now() - startMs) / 1000;
+      drawFrame(t);
+
+      const p = clamp(t / dur, 0, 1);
+      setProgress(p * 0.9);
+      setStatus(`Recording... ${t.toFixed(1)} / ${dur.toFixed(1)}s`);
+
+      if (t >= dur) break;
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    recorder.stop();
+    await stopped;
+
+    if (audioWasStarted) {
+      try { audioPlayer.pause(); audioPlayer.currentTime = 0; } catch {}
+    }
+
+    return new Blob(chunks, { type: mimeType || 'video/webm' });
+  } finally {
+    isExporting = false;
+    pauseBgVideoForIdle();
   }
-
-  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-  const chunks = [];
-  recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-
-  let resolveStop;
-  const stopped = new Promise((res) => resolveStop = res);
-  recorder.onstop = () => resolveStop();
-
-  if (bg.type === 'video' && bg.el) {
-    try { bg.el.currentTime = 0; } catch {}
-    try { await bg.el.play(); } catch {}
-  }
-
-  recorder.start(200);
-
-  const dur = totalDuration();
-  const startMs = performance.now();
-
-  setStatus('Recording...');
-  while (true) {
-    const t = (performance.now() - startMs) / 1000;
-    drawFrame(t);
-
-    const p = clamp(t / dur, 0, 1);
-    setProgress(p * 0.9);
-    setStatus(`Recording... ${t.toFixed(1)} / ${dur.toFixed(1)}s`);
-
-    if (t >= dur) break;
-    await new Promise(r => setTimeout(r, 0));
-  }
-
-  recorder.stop();
-  await stopped;
-
-  if (audioWasStarted) {
-    try { audioPlayer.pause(); audioPlayer.currentTime = 0; } catch {}
-  }
-
-  return new Blob(chunks, { type: mimeType || 'video/webm' });
 }
 
 /* ---- FFmpeg ---- */
@@ -1494,6 +1773,8 @@ btnExport.addEventListener('click', async () => {
   if (!isProjectValid()) return;
 
   stopPreview();
+  deselectCard();
+
   canvas.style.display = 'block';
   resultVideo.style.display = 'none';
 
@@ -1549,13 +1830,19 @@ btnExport.addEventListener('click', async () => {
 });
 
 for (const el of [
-  resolutionSel, fpsSel, fontFamilyEl, fontSizeEl, enableFadeEl, enableGrainEl,
+  fpsSel, fontFamilyEl, fontSizeEl, enableFadeEl, enableGrainEl,
   bgFitEl, bgDimEl, bgMutePreviewEl, bgLoopEl
 ]) {
   if (!el) continue;
-  el.addEventListener('change', () => { updateMeta(); if (!isPreviewing) redrawIdle(); });
-  el.addEventListener('input',  () => { updateMeta(); if (!isPreviewing) redrawIdle(); });
+  el.addEventListener('change', () => { updateMeta(); refreshCanvasFromSettings(); });
+  el.addEventListener('input',  () => { updateMeta(); refreshCanvasFromSettings(); });
 }
+
+resolutionSel?.addEventListener('change', () => {
+  scaleFontSizeOnResolutionChange();
+  updateMeta();
+  refreshCanvasFromSettings();
+});
 
 function setupDeselectHandlers() {
   document.addEventListener('click', (e) => {
@@ -1570,8 +1857,9 @@ function setupDeselectHandlers() {
 setupCanvasEditHandlers();
 setupDeselectHandlers();
 
-renderCardsUI();
+loadExampleCards();
+initFontResolutionTracking();
+syncBgVideoControls();
 updateMeta();
 updateActionButtons();
-redrawIdle();
 setStatus('Select a card, then drag text (gold) or image (blue) in the preview.');

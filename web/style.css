@@ -217,6 +217,12 @@ input:focus,select:focus,textarea:focus{border-color:#3a3a3a}
   border-radius:14px;
   padding:12px;
 }
+.boxSpaced{ margin-top:14px; }
+.settingsCol{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
 
 /* ✅ FIX #2: space above audio player */
 #audioPlayer{
@@ -403,6 +409,28 @@ input:focus,select:focus,textarea:focus{border-color:#3a3a3a}
 .split label{margin:0}
 .split input[type="number"]{width:100%; min-width:0}
 
+.durationField{display:flex;flex-direction:column;gap:6px}
+.durationSuggest{
+  margin-top:2px;
+}
+.durationSuggestVal{
+  font-size:11px;
+  color:var(--muted);
+  cursor:pointer;
+  text-decoration:underline;
+  text-decoration-color:transparent;
+  text-underline-offset:2px;
+  transition:color .15s, text-decoration-color .15s;
+}
+.durationSuggestVal:hover:not(.durationSuggestVal-applied){
+  color:var(--text);
+  text-decoration-color:currentColor;
+}
+.durationSuggestVal-applied{
+  cursor:default;
+  opacity:.65;
+}
+
 /* ✅ FIX #1: Card textarea auto-grow, no inner scrollbars */
 .cardItem textarea{
   min-height:56px;
@@ -421,6 +449,21 @@ input:focus,select:focus,textarea:focus{border-color:#3a3a3a}
 }
 .posRow label{flex:1}
 .posRow .check{margin:0; white-space:nowrap}
+
+.fontRow{
+  display:grid;
+  grid-template-columns:1fr 0.7fr;
+  gap:10px;
+  margin-top:10px;
+}
+.fontRow label{margin:0}
+.cardFontHint{
+  margin-top:6px;
+  margin-bottom:0;
+}
+.cardItem-customFont{
+  box-shadow:0 0 0 1px rgba(255,210,80,.22);
+}
 
 /* Optional log */
 .log{
