@@ -71,11 +71,7 @@ docker compose pull
 docker compose up -d
 ```
 
-The image is built automatically on every push to `main` and published to [GHCR](https://github.com/Lawgics/ahoy-bump-maker/pkgs/container/ahoy-bump-maker).
-
-> **First-time setup:** After the first publish, open the package on GitHub → **Package settings** → set visibility to **Public** so Dockhand can pull without login.
-
-### Run from source (developers)
+### Run from source (optional)
 
 **Option A — Download**
 
@@ -123,7 +119,7 @@ Leave that window open while you work. Open **http://localhost:1234**.
 
 ### Export and use on Plex
 
-1. Click **Export MP4**. Your browser downloads the video (first export may take a moment while it loads encoder files — normal).
+1. Click **Export MP4**. Your browser downloads the video (usually takes a few seconds).
 2. Move the MP4 somewhere your Plex server can access.
 3. Follow **[Using announcements on Plex](#using-announcements-on-plex)** below to set it up as a pre-roll (or use [NeXroll](https://github.com/JFLXCLOUD/NeXroll)).
 
@@ -213,6 +209,5 @@ docker run --rm -p 5173:80 matthuey/as-bump-maker:latest
 
 ## Notes
 
-- **Export browser:** Firefox works with the **Docker image** — MP4 conversion runs on the server, not in the browser. Local `python -m http.server` dev mode may still need Chrome for export.
-- First export in Docker usually takes a few seconds while the server converts WebM to MP4. No browser WASM compile step.
-- The Docker container serves the editor and converts exports. The finished MP4 downloads to your browser — nothing is saved on the server.
+- Export works in **Firefox, Chrome, and Edge** when running the Docker image. MP4 conversion happens on the server — the finished file downloads to your browser.
+- Nothing is saved on the server after export; move the MP4 to your Plex pre-roll path yourself.
