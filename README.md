@@ -16,7 +16,7 @@ Your users already open Plex to watch something. **[ahoy]** lets you meet them t
 
 ### Example output
 
-A finished bump from **Load example** — what your Plex users would see:
+A finished bump from **Load example** — maintenance notice with an `[ahoy]` sign-off and pirate dog:
 
 ![Example output](assets/example-output.gif)
 
@@ -31,8 +31,10 @@ _App walkthrough (screen recording) coming soon._
 - **Create a multi-part announcement** — Add cards (like slides). Each card shows for a few seconds, one after another — perfect for “hey everyone” → the news → a sign-off.
 - **Use text, images, or both** — Type your message, upload a logo or photo, or combine them on the same card (e.g. your avatar + “your server admin”).
 - **Control timing** — Set how long each card stays on screen. Not sure? Click the **Suggested** time under Seconds and it picks a readable length for you.
+- **Style text per card** — Set a default font under **Text style**, then override font or size on individual cards (e.g. a quiet `[ahoy]` whisper on the last card).
 - **Position everything visually** — Click a card, then drag text and images in the preview until the layout looks right. No coordinate math.
-- **Add atmosphere (optional)** — Background image or video, light grain, quick fades, background music — or skip all of it and keep the classic black bump look.
+- **Add atmosphere (optional)** — Background image or video (with mute/loop controls), light grain, quick fades, background music — or skip all of it and keep the classic black bump look.
+- **Choose output size** — **Output** sets resolution and FPS; font size scales automatically when you change resolution.
 - **Preview the full video** — Hit **Preview** to watch the whole announcement before you commit.
 - **Export an MP4** — One click downloads a file you can drop into Plex pre-rolls, NeXroll, or a media folder. Ready to show your users.
 
@@ -88,9 +90,10 @@ You should see the **[ahoy]** editor.
    - Type your **Text** (or leave blank if the card is image-only)
    - Set **Seconds** (or click **Suggested: X.Xs** to apply the recommended time)
    - Optionally **Browse image** to add a picture
+   - Optionally set **Font override** / **Size override** for that card only
    - Use **Text position** / **Image position** dropdowns, or click the card and **drag in the preview**
 3. Use the **grip** (six dots) on a card to drag and reorder cards.
-4. Optional: under **Background** and **Audio**, add a backdrop or music.
+4. Optional: under **Output**, pick resolution and FPS. Under **Background** and **Audio**, add a backdrop or music. Under **Text style**, set the default font, fade, and grain.
 5. Click **Preview** to watch the full timeline. Click **Stop** when done.
 
 ### 4. Export and use on Plex
@@ -101,7 +104,8 @@ You should see the **[ahoy]** editor.
 
 **Tips:**
 
-- Click a card to edit it. Click anywhere else (Background, Look, etc.) to deselect.
+- Click a card to edit it. Click anywhere else (Output, Text style, Background, etc.) to deselect.
+- **Mute background video sound** only affects a video backdrop — not music under **Audio**.
 - Export clears the edit outlines automatically — your MP4 won’t have yellow/blue boxes.
 - If **Export** is greyed out, a card is empty — add text or an image to every card.
 
@@ -180,6 +184,22 @@ docker run --rm -p 5173:80 matthuey/as-bump-maker:latest
 Then open http://localhost:5173.
 
 > The upstream Docker image does not include per-card images, preview drag editing, or other [ahoy]-specific features. Use this repo’s `web/` source until an [ahoy] Docker image is published.
+
+## Updating the README example (maintainers)
+
+If you re-export the demo bump for `assets/example-output.mp4`, regenerate the GIF so the README preview stays in sync:
+
+```powershell
+cd C:\Users\Mars\projects\ahoy-bump-maker
+
+# Copy your exported MP4 from Downloads (adjust the filename if needed)
+Copy-Item "$env:USERPROFILE\Downloads\bump-*.mp4" .\assets\example-output.mp4 -Force
+
+# Regenerate the GIF for GitHub README embed
+ffmpeg -y -i .\assets\example-output.mp4 -vf "fps=12,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -loop 0 .\assets\example-output.gif
+```
+
+Then commit and push `assets/example-output.mp4`, `assets/example-output.gif`, and any README changes.
 
 ## Notes
 
