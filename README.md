@@ -40,11 +40,44 @@ _App walkthrough (screen recording) coming soon._
 
 Everything runs in your **web browser**. You edit on your PC; the finished MP4 goes on your Plex server. No install wizard — just open the app, make your bump, export, done.
 
-> **Docker support is coming soon** — the easiest way to run [ahoy] on a homelab. For now, use the steps below. They work on Windows, Mac, and Linux.
+### Docker (recommended for homelab)
 
-### 1. Get the app on your computer
+Paste into **Dockhand**, **Dockge**, Portainer, or any Compose host:
 
-**Option A — Download (easiest if you don’t use Git)**
+```yaml
+services:
+  ahoy:
+    image: ghcr.io/lawgics/ahoy-bump-maker:latest
+    container_name: ahoy
+    ports:
+      - "1234:80"
+    restart: unless-stopped
+```
+
+Or from a git clone:
+
+```bash
+git clone https://github.com/Lawgics/ahoy-bump-maker.git
+cd ahoy-bump-maker
+docker compose up -d
+```
+
+Open **http://localhost:1234** (or `http://<your-server-ip>:1234`).
+
+**Updates:** pull the latest image and recreate the container:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+The image is built automatically on every push to `main` and published to [GHCR](https://github.com/Lawgics/ahoy-bump-maker/pkgs/container/ahoy-bump-maker).
+
+> **First-time setup:** After the first publish, open the package on GitHub → **Package settings** → set visibility to **Public** so Dockhand can pull without login.
+
+### Run from source (developers)
+
+**Option A — Download**
 
 1. Open this repo on GitHub → green **Code** button → **Download ZIP**
 2. Unzip it somewhere simple, e.g. `C:\Users\You\ahoy-bump-maker`
@@ -57,31 +90,25 @@ git clone https://github.com/Lawgics/ahoy-bump-maker.git
 cd ahoy-bump-maker/web
 ```
 
-### 2. Start the app
+**Start a local server** in the **`web`** folder:
 
-Open a terminal in the **`web`** folder.
-
-**Windows (PowerShell):**
+Windows (PowerShell):
 
 ```powershell
 cd C:\path\to\ahoy-bump-maker\web
 py -m http.server 1234
 ```
 
-**Mac / Linux:**
+Mac / Linux:
 
 ```bash
 cd /path/to/ahoy-bump-maker/web
 python3 -m http.server 1234
 ```
 
-Leave that window open while you work. Open your browser to:
+Leave that window open while you work. Open **http://localhost:1234**.
 
-**http://localhost:1234**
-
-You should see the **[ahoy]** editor.
-
-### 3. Create your announcement
+### Create your announcement
 
 1. Click **Load example** to see a ready-made maintenance bump, or **+ Add card** to start fresh.
 2. For each card:
@@ -94,7 +121,7 @@ You should see the **[ahoy]** editor.
 4. Optional: under **Output**, pick resolution and FPS. Under **Background** and **Audio**, add a backdrop or music. Under **Text style**, set the default font, fade, and grain.
 5. Click **Preview** to watch the full timeline. Click **Stop** when done.
 
-### 4. Export and use on Plex
+### Export and use on Plex
 
 1. Click **Export MP4**. Your browser downloads the video (first export may take a moment while it loads encoder files — normal).
 2. Move the MP4 somewhere your Plex server can access.
@@ -160,7 +187,6 @@ We’re working on docs for surfacing announcements on the Plex home page — e.
 
 ## Planned
 
-- **Docker image** — run [ahoy] with one command on your homelab (top priority for easier setup)
 - Export directly to a server folder (preroll path via volume mount + upload API)
 - Home screen announcement guide (collections / pinned hubs)
 - Optional basic auth for homelab deployments
@@ -173,16 +199,19 @@ The original project targets [Tunarr](https://github.com/chrisbenincasa/tunarr) 
 
 Thanks to **Matthunker** for the original app and Docker image (`matthuey/as-bump-maker`).
 
-To run the **upstream** image (without [ahoy] features):
+Run **[ahoy]** with Docker (see [Get started](#docker-recommended-for-homelab)):
+
+```bash
+docker run --rm -p 1234:80 ghcr.io/lawgics/ahoy-bump-maker:latest
+```
+
+The upstream **as-bump-maker** image does not include [ahoy] features (per-card images, drag editing, Plex-focused example, etc.):
 
 ```bash
 docker run --rm -p 5173:80 matthuey/as-bump-maker:latest
 ```
 
-Then open http://localhost:5173.
-
-> The upstream Docker image does not include per-card images, preview drag editing, or other [ahoy]-specific features. Use this repo’s `web/` source until an [ahoy] Docker image is published.
-
 ## Notes
 
-- First export may take a little longer while your browser downloads encoder files — only happens once.
+- First export may take a little longer while your browser downloads encoder files from the CDN — only happens once. The machine running your browser needs internet for export; the Docker container only serves the editor.
+- The Docker image is a static file server. MP4 export downloads to your browser — nothing is saved on the server yet.
