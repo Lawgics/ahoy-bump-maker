@@ -1,5 +1,3 @@
-import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js';
-
 const $ = (sel) => document.querySelector(sel);
 
 const canvas = $('#canvas');
@@ -1682,6 +1680,38 @@ async function toBlobURL(url, mimeType, label) {
   return URL.createObjectURL(blob);
 }
 
+async function loadFFmpegModule() {
+  try {
+    const local = await import('./vendor/ffmpeg-esm/index.js');
+    return local.FFmpeg;
+  } catch {
+    const cdn = await import('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js');
+    return cdn.FFmpeg;
+  }
+}
+
+async function vendorFfmpegAvailable() {
+  try {
+    const res = await fetch('./vendor/ffmpeg-core.js', { method: 'HEAD', cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function loadFfmpegWithTimeout(ffmpegInstance, config, timeoutMs = 120000) {
+  return Promise.race([
+    ffmpegInstance.load(config),
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(
+          `FFmpeg init timed out after ${timeoutMs / 1000}s. Keep this tab focused and try Chrome or Edge. Refresh the page and export again.`
+        ));
+      }, timeoutMs);
+    }),
+  ]);
+}
+
 async function loadFFmpegIfNeeded() {
   if (ffmpegLoaded) return;
 
@@ -1689,21 +1719,33 @@ async function loadFFmpegIfNeeded() {
   if (logEl) logEl.textContent = '';
   setStatus('Loading ffmpeg-core (first time only)...');
 
+  const FFmpeg = await loadFFmpegModule();
   ffmpeg = new FFmpeg();
   ffmpeg.on('log', ({ message }) => log(message));
   ffmpeg.on('progress', ({ progress }) => {
     if (typeof progress === 'number') setProgress(0.9 + progress * 0.1);
   });
 
-  const coreBase = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd';
-  const ffBase = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm';
-
-  const workerURL = await toBlobURL(`${ffBase}/worker.js`, 'text/javascript', 'Downloading worker.js...');
-  const coreURL = await toBlobURL(`${coreBase}/ffmpeg-core.js`, 'text/javascript', 'Downloading ffmpeg-core.js...');
-  const wasmURL = await toBlobURL(`${coreBase}/ffmpeg-core.wasm`, 'application/wasm', 'Downloading ffmpeg-core.wasm...');
+  let loadConfig;
+  if (await vendorFfmpegAvailable()) {
+    loadConfig = {
+      workerURL: './vendor/ffmpeg-esm/worker.js',
+      classWorkerURL: './vendor/ffmpeg-esm/worker.js',
+      coreURL: './vendor/ffmpeg-core.js',
+      wasmURL: './vendor/ffmpeg-core.wasm',
+    };
+  } else {
+    const coreBase = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd';
+    const ffBase = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm';
+    const workerURL = await toBlobURL(`${ffBase}/worker.js`, 'text/javascript', 'Downloading worker.js...');
+    const coreURL = await toBlobURL(`${coreBase}/ffmpeg-core.js`, 'text/javascript', 'Downloading ffmpeg-core.js...');
+    const wasmURL = await toBlobURL(`${coreBase}/ffmpeg-core.wasm`, 'application/wasm', 'Downloading ffmpeg-core.wasm...');
+    loadConfig = { workerURL, classWorkerURL: workerURL, coreURL, wasmURL };
+  }
 
   setStatus('Initializing ffmpeg (compiling wasm)...');
-  await ffmpeg.load({ workerURL, classWorkerURL: workerURL, coreURL, wasmURL });
+  log(`crossOriginIsolated=${crossOriginIsolated}`);
+  await loadFfmpegWithTimeout(ffmpeg, loadConfig);
 
   ffmpegLoaded = true;
   setProgress(0);
@@ -1821,8 +1863,9 @@ btnExport.addEventListener('click', async () => {
     setStatus('Done. Download started.');
   } catch (err) {
     console.error(err);
-    setStatus('Export failed.');
-    log(String(err?.message || err));
+    const msg = String(err?.message || err);
+    setStatus(msg.includes('timed out') ? msg : 'Export failed. Try Chrome or Edge if Firefox hangs on export.');
+    log(msg);
     setProgress(0);
   } finally {
     updateActionButtons();

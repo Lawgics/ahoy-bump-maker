@@ -213,5 +213,6 @@ docker run --rm -p 5173:80 matthuey/as-bump-maker:latest
 
 ## Notes
 
-- First export may take a little longer while your browser downloads encoder files from the CDN — only happens once. The machine running your browser needs internet for export; the Docker container only serves the editor.
+- **Export browser:** Chrome or Edge is most reliable. Firefox often needs the Docker image (bundled FFmpeg + isolation headers) and may still be slower on first export.
+- First export may take a little longer while your browser compiles FFmpeg WASM — usually under 2 minutes. Keep the tab focused. The machine running your browser needs internet unless you use the Docker image (FFmpeg files are bundled there).
 - The Docker image is a static file server. MP4 export downloads to your browser — nothing is saved on the server yet.
