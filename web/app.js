@@ -1705,7 +1705,7 @@ function loadFfmpegWithTimeout(ffmpegInstance, config, timeoutMs = 120000) {
     new Promise((_, reject) => {
       setTimeout(() => {
         reject(new Error(
-          `FFmpeg init timed out after ${timeoutMs / 1000}s. Keep this tab focused and try Chrome or Edge. Refresh the page and export again.`
+          `FFmpeg init timed out after ${timeoutMs / 1000}s. Use the Docker image for server-side export, or try Chrome or Edge.`
         ));
       }, timeoutMs);
     }),
@@ -1773,9 +1773,42 @@ function fileExt(name) {
   return m ? m[1] : 'bin';
 }
 
+let serverMuxAvailableCache = null;
+
+async function isServerMuxAvailable() {
+  if (serverMuxAvailableCache !== null) return serverMuxAvailableCache;
+  try {
+    const res = await fetch('/api/health', { cache: 'no-store' });
+    serverMuxAvailableCache = res.ok;
+  } catch {
+    serverMuxAvailableCache = false;
+  }
+  return serverMuxAvailableCache;
+}
+
+async function muxToMp4OnServer(webmBlob, audioFileObjOrNull) {
+  setStatus('Converting to MP4 on server...');
+  const form = new FormData();
+  form.append('video', webmBlob, 'bump.webm');
+  if (audioFileObjOrNull) {
+    form.append('audio', audioFileObjOrNull, audioFileObjOrNull.name || 'audio.bin');
+  }
+  const res = await fetch('/api/mux-mp4', { method: 'POST', body: form });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Server mux failed (${res.status})`);
+  }
+  setProgress(0.95);
+  return await res.blob();
+}
+
 async function muxToMp4(webmBlob, audioFileObjOrNull) {
+  if (await isServerMuxAvailable()) {
+    return muxToMp4OnServer(webmBlob, audioFileObjOrNull);
+  }
+
   await loadFFmpegIfNeeded();
-  setStatus('Converting to MP4...');
+  setStatus('Converting to MP4 in browser...');
 
   const webmData = new Uint8Array(await webmBlob.arrayBuffer());
   await ffmpeg.writeFile('input.webm', webmData);

@@ -213,6 +213,6 @@ docker run --rm -p 5173:80 matthuey/as-bump-maker:latest
 
 ## Notes
 
-- **Export browser:** Chrome or Edge is most reliable. Firefox often needs the Docker image (bundled FFmpeg + isolation headers) and may still be slower on first export.
-- First export may take a little longer while your browser compiles FFmpeg WASM — usually under 2 minutes. Keep the tab focused. The machine running your browser needs internet unless you use the Docker image (FFmpeg files are bundled there).
-- The Docker image is a static file server. MP4 export downloads to your browser — nothing is saved on the server yet.
+- **Export browser:** Firefox works with the **Docker image** — MP4 conversion runs on the server, not in the browser. Local `python -m http.server` dev mode may still need Chrome for export.
+- First export in Docker usually takes a few seconds while the server converts WebM to MP4. No browser WASM compile step.
+- The Docker container serves the editor and converts exports. The finished MP4 downloads to your browser — nothing is saved on the server.
