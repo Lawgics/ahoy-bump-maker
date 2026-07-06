@@ -10,7 +10,7 @@ Self-hosted Plex admins often struggle to reach everyone on the server:
 - **Discord** only works if every viewer actually uses it
 - **Email** gets ignored or lost
 
-Your users already open Plex to watch something. **[ahoy]** lets you meet them there — create simple Adult Swim–style bump videos for maintenance windows, new features, library updates, and anything else that’s awkward to broadcast elsewhere. Export an MP4 and deliver it on Plex as a **pre-roll** or (coming soon) a pinned **home screen** collection.
+Your users already open Plex to watch something. **[ahoy]** lets you meet them there — create simple Adult Swim–style bump videos for maintenance windows, new features, library updates, and anything else that's awkward to broadcast elsewhere. Export an MP4 and deliver it on Plex as a **pre-roll** or (coming soon) a pinned **home screen** collection.
 
 ## See it in action
 
@@ -26,15 +26,17 @@ _App walkthrough (screen recording) coming soon._
 
 [ahoy] is a small browser app — no video editor to learn. You build a short announcement slide-by-slide, preview it, and download an MP4 for Plex.
 
-- **Create a multi-part announcement** — Add cards (like slides). Each card shows for a few seconds, one after another — perfect for “hey everyone” → the news → a sign-off.
-- **Use text, images, or both** — Type your message, upload a logo or photo, or combine them on the same card (e.g. your avatar + “your server admin”).
-- **Control timing** — Set how long each card stays on screen. Not sure? Click the **Suggested** time under Seconds and it picks a readable length based on the card’s word and character count.
+- **Create a multi-part announcement** — Add cards (like slides). Each card shows for a few seconds, one after another — perfect for "hey everyone" → the news → a sign-off.
+- **Use text, images, or both** — Type your message, upload a logo or photo, or combine them on the same card (e.g. your avatar + "your server admin").
+- **Control timing** — Set how long each card stays on screen. Not sure? Click the **Suggested** time under Seconds and it picks a readable length based on the card's word and character count.
 - **Style text per card** — Set a default font under **Text style**, then override font or size on individual cards (e.g. a quiet `[ahoy]` whisper on the last card).
 - **Position everything visually** — Click a card, then drag text and images in the preview until the layout looks right. No coordinate math.
 - **Add atmosphere (optional)** — Background image or video (with mute/loop controls), light grain, quick fades, background music — or skip all of it and keep the classic black bump look.
 - **Choose output size** — **Output** sets resolution and FPS; font size scales automatically when you change resolution.
 - **Preview the full video** — Hit **Preview** to watch the whole announcement before you commit.
 - **Export an MP4** — One click downloads a file you can drop into Plex pre-rolls, NeXroll, or a media folder. Ready to show your users.
+- **Pick up where you left off** — Your work saves automatically in the browser while you edit.
+- **Preview uploads** — Play audio and check background files in the editor before you export.
 
 ## Get started
 
@@ -77,7 +79,7 @@ docker compose up -d
 
 1. Open this repo on GitHub → green **Code** button → **Download ZIP**
 2. Unzip it somewhere simple, e.g. `C:\Users\You\ahoy-bump-maker`
-3. Inside that folder, open the **`web`** folder — that’s the app
+3. Inside that folder, open the **`web`** folder — that's the app
 
 **Option B — Git**
 
@@ -104,6 +106,8 @@ python3 -m http.server 1234
 
 Leave that window open while you work. Open **http://localhost:1234**.
 
+For the most reliable **Export MP4** experience (especially in Firefox), use the Docker image above.
+
 ### Create your announcement
 
 1. Click **Load example** to see a ready-made maintenance bump, or **+ Add card** to start fresh.
@@ -125,14 +129,16 @@ Leave that window open while you work. Open **http://localhost:1234**.
 
 **Tips:**
 
-- Click a card to edit it. Click anywhere else (Output, Text style, Background, etc.) to deselect.
+- Click a card to edit it. Double-click text in the preview to edit in place. Click anywhere else (Output, Text style, Background, etc.) to deselect.
+- Refresh the page anytime — your draft should still be there.
 - **Mute background video sound** only affects a video backdrop — not music under **Audio**.
-- Export clears the edit outlines automatically — your MP4 won’t have yellow/blue boxes.
+- Export clears the edit outlines automatically — your MP4 won't have yellow/blue boxes.
 - If **Export** is greyed out, a card is empty — add text or an image to every card.
+- Very large audio or background files might not restore with your draft; the app will tell you if that happens.
 
 ## Using announcements on Plex
 
-Once you’ve exported a bump from [ahoy], you need to get it in front of your users. Two main approaches:
+Once you've exported a bump from [ahoy], you need to get it in front of your users. Two main approaches:
 
 | Method | Good for | Status |
 |--------|----------|--------|
@@ -141,7 +147,7 @@ Once you’ve exported a bump from [ahoy], you need to get it in front of your u
 
 ### Pre-rolls (play before movies)
 
-Good for maintenance windows, outages, and “heads up” messages that play before a movie starts.
+Good for maintenance windows, outages, and "heads up" messages that play before a movie starts.
 
 1. **Copy your exported MP4** somewhere your Plex server can read (local disk, NAS share, etc.).
 2. **Tell Plex about it** using one of the options below.
@@ -171,18 +177,26 @@ Do not add spaces around the separators.
 
 #### Important — your users must have Cinema Trailers enabled
 
-Pre-rolls only play when Cinema Trailers is turned on. From Plex’s docs:
+Pre-rolls only play when Cinema Trailers is turned on. From Plex's docs:
 
-> In order to have the “pre-roll” video(s) played, users will need to have the Cinema Trailers feature enabled in their Plex App. The **Enable Cinema Trailers** advanced library setting must also be enabled for the library.
+> In order to have the "pre-roll" video(s) played, users will need to have the Cinema Trailers feature enabled in their Plex App. The **Enable Cinema Trailers** advanced library setting must also be enabled for the library.
 
-So: server path configured ✓ is not enough — each viewer needs Cinema Trailers on in their client **and** in that library’s advanced settings. Worth mentioning to your users when you roll out announcements.
+So: server path configured ✓ is not enough — each viewer needs Cinema Trailers on in their client **and** in that library's advanced settings. Worth mentioning to your users when you roll out announcements.
 
 ### On your home screen (coming soon)
 
-We’re working on docs for surfacing announcements on the Plex home page — e.g. a pinned **collection** or playlist (possibly with tools like [Maintainerr](https://github.com/Maintainerr/Maintainerr) or [Agregarr](https://github.com/agregarr/agregarr)) instead of a full separate library. Step-by-step guide TBD.
+We're working on docs for surfacing announcements on the Plex home page — e.g. a pinned **collection** or playlist (possibly with tools like [Maintainerr](https://github.com/Maintainerr/Maintainerr) or [Agregarr](https://github.com/agregarr/agregarr)) instead of a full separate library. Step-by-step guide TBD.
+
+## Recent improvements
+
+- **Draft auto-save** — Your cards, timing, audio, and background come back after a browser refresh.
+- **Safer clears** — **Clear cards**, **Clear all**, and **Load example** ask for confirmation first.
+- **Media previews** — Hear uploaded audio in the editor; see a thumbnail for image or video backgrounds.
+- **Easier editing** — Double-click text in the preview to edit in place; long filenames no longer break the layout.
 
 ## Planned
 
+- **Templates** — Save a reusable starting point with your usual greeting, logo, and sign-off, then load it when you need a new announcement and only fill in the cards in between.
 - Export directly to a server folder (preroll path via volume mount + upload API)
 - Home screen announcement guide (collections / pinned hubs)
 - Optional basic auth for homelab deployments
@@ -211,3 +225,4 @@ docker run --rm -p 5173:80 matthuey/as-bump-maker:latest
 
 - Export works in **Firefox, Chrome, and Edge** when running the Docker image. MP4 conversion happens on the server — the finished file downloads to your browser.
 - Nothing is saved on the server after export; move the MP4 to your Plex pre-roll path yourself.
+- Drafts are stored in your browser only. Clearing site data for this app removes them.
