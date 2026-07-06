@@ -12,20 +12,36 @@ const metaDuration = $('#metaDuration');
 const btnPreview = $('#btnPreview');
 const btnStop = $('#btnStop');
 const btnExport = $('#btnExport');
+const btnClearAll = $('#btnClearAll');
 const btnAdd = $('#btnAdd');
 const btnLoadExample = $('#btnLoadExample');
 const btnClear = $('#btnClear');
 
 const audioFile = $('#audioFile');
+const btnBrowseAudio = $('#btnBrowseAudio');
+const btnClearAudio = $('#btnClearAudio');
+const audioFileName = $('#audioFileName');
+const audioLoadedBlock = $('#audioLoadedBlock');
 const audioPlayer = $('#audioPlayer');
 const downloadLink = $('#downloadLink');
 const resultVideo = $('#resultVideo');
 
 const bgFile = $('#bgFile');
+const btnBrowseBg = $('#btnBrowseBg');
+const btnClearBg = $('#btnClearBg');
+const bgFileName = $('#bgFileName');
+const bgPreviewWrap = $('#bgPreviewWrap');
+const bgImagePreview = $('#bgImagePreview');
 const bgFitEl = $('#bgFit');
 const bgDimEl = $('#bgDim'); // Opacity
 const bgMutePreviewEl = $('#bgMutePreview');
 const bgLoopEl = $('#bgLoop');
+
+const confirmDialog = $('#confirmDialog');
+const confirmDialogTitle = $('#confirmDialogTitle');
+const confirmDialogMessage = $('#confirmDialogMessage');
+const confirmDialogOk = $('#confirmDialogOk');
+const confirmDialogCancel = $('#confirmDialogCancel');
 
 const resolutionSel = $('#resolution');
 const fpsSel = $('#fps');
@@ -34,6 +50,18 @@ const fontSizeEl = $('#fontSize');
 const enableFadeEl = $('#enableFade');
 const enableGrainEl = $('#enableGrain');
 const previewFrame = $('#previewFrame');
+
+const STORAGE_KEY = 'ahoy-draft-v1';
+const DRAFT_DB_NAME = 'ahoy-draft-db';
+const DRAFT_STORE = 'draft';
+const MAX_CARD_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
+const MAX_BG_BYTES = 32 * 1024 * 1024;
+let saveProjectTimer = null;
+let audioObjectUrl = null;
+let canvasTextEditEl = null;
+let canvasTextEditCardIdx = null;
+let isRestoringProject = false;
 
 const PRESET_OPTIONS = `
   <option value="top-left">Top Left</option>
@@ -55,6 +83,618 @@ function autosizeTA(ta){
 }
 
 // --- Per-card position helpers ---
+function syncAudioUi(name, { restored = false } = {}) {
+  const has = !!getAudioPersistSrc();
+  if (audioFileName) {
+    if (has) {
+      const label = name || 'Audio loaded';
+      audioFileName.textContent = restored ? `${label} (restored)` : label;
+    } else {
+      audioFileName.textContent = 'No audio';
+    }
+  }
+  if (btnBrowseAudio) {
+    btnBrowseAudio.textContent = has ? 'Replace audio' : 'Choose audio';
+  }
+  if (btnClearAudio) btnClearAudio.hidden = !has;
+  if (audioLoadedBlock) audioLoadedBlock.hidden = !has;
+}
+
+function frameLuminance(canvas) {
+  const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < data.length; i += 16) {
+    sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    count++;
+  }
+  return count ? sum / count : 0;
+}
+
+function captureVideoFrame(videoEl) {
+  return new Promise((resolve) => {
+    const src = videoEl.currentSrc || videoEl.src;
+    if (!src) { resolve(null); return; }
+
+    const thumb = document.createElement('video');
+    thumb.muted = true;
+    thumb.playsInline = true;
+    thumb.preload = 'auto';
+
+    const seekRatios = [0.5, 0.35, 0.65, 0.2, 0.8];
+    let ratioIdx = 0;
+    let bestDataUrl = null;
+    let bestLuma = 0;
+
+    const cleanup = () => {
+      thumb.removeEventListener('seeked', onSeeked);
+      thumb.removeAttribute('src');
+      try { thumb.load(); } catch {}
+      thumb.remove();
+    };
+
+    const finish = (dataUrl) => {
+      cleanup();
+      resolve(dataUrl || bestDataUrl);
+    };
+
+    const tryNextSeek = () => {
+      const duration = thumb.duration;
+      if (!Number.isFinite(duration) || duration <= 0 || ratioIdx >= seekRatios.length) {
+        finish(bestDataUrl);
+        return;
+      }
+      const ratio = seekRatios[ratioIdx++];
+      const t = Math.min(Math.max(0, duration - 0.04), Math.max(0, duration * ratio));
+      try { thumb.currentTime = t; }
+      catch { finish(bestDataUrl); }
+    };
+
+    const onSeeked = () => {
+      try {
+        const w = thumb.videoWidth;
+        const h = thumb.videoHeight;
+        if (!w || !h) { tryNextSeek(); return; }
+
+        const maxH = 72;
+        const scale = Math.min(1, maxH / h);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        canvas.getContext('2d').drawImage(thumb, 0, 0, canvas.width, canvas.height);
+
+        const luma = frameLuminance(canvas);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        if (luma > bestLuma) {
+          bestLuma = luma;
+          bestDataUrl = dataUrl;
+        }
+        // Bright enough — stop early (skip mostly-black frames)
+        if (luma >= 18) {
+          finish(dataUrl);
+          return;
+        }
+        tryNextSeek();
+      } catch {
+        tryNextSeek();
+      }
+    };
+
+    thumb.addEventListener('error', () => finish(null), { once: true });
+    thumb.addEventListener('seeked', onSeeked);
+    thumb.addEventListener('loadedmetadata', () => tryNextSeek(), { once: true });
+
+    thumb.src = src;
+    thumb.load();
+  });
+}
+
+function syncBgPreview() {
+  if (!bgPreviewWrap || !bgImagePreview) return;
+
+  if (bg.type === 'image' && bg.el) {
+    bgImagePreview.src = bg.url || bg.el.src;
+    bgImagePreview.alt = bgFileName?.textContent || 'Background image';
+    bgPreviewWrap.hidden = false;
+    return;
+  }
+
+  if (bg.type === 'video' && bg.el) {
+    bgPreviewWrap.hidden = false;
+    bgImagePreview.alt = bgFileName?.textContent || 'Background video';
+    captureVideoFrame(bg.el).then((poster) => {
+      if (bg.type !== 'video' || !bg.el) return;
+      if (poster) bgImagePreview.src = poster;
+      else bgPreviewWrap.hidden = true;
+    });
+    return;
+  }
+
+  bgPreviewWrap.hidden = true;
+  bgImagePreview.removeAttribute('src');
+  bgImagePreview.alt = '';
+}
+
+function syncBgUi(name, { restored = false } = {}) {
+  if (!bgFileName) return;
+  if (bg.type === 'image' || bg.type === 'video') {
+    const label = name || (bg.type === 'video' ? 'Video background' : 'Image background');
+    bgFileName.textContent = restored ? `${label} (restored)` : label;
+  } else {
+    bgFileName.textContent = 'No background';
+  }
+  if (btnBrowseBg) {
+    btnBrowseBg.textContent = bg.type !== 'none' ? 'Replace file' : 'Choose file';
+  }
+  if (btnClearBg) btnClearBg.hidden = bg.type === 'none';
+  syncBgPreview();
+}
+
+function getAudioPersistSrc() {
+  const src = audioPlayer?.getAttribute('src')?.trim() || '';
+  if (!src || src === window.location.href) return '';
+  return src;
+}
+
+function projectHasContent() {
+  return cards.length > 0 || !!getAudioPersistSrc() || bg.type !== 'none';
+}
+
+let confirmResolve = null;
+
+function showConfirm(message, { title = 'Are you sure?', confirmLabel = 'Confirm', cancelLabel = 'Cancel' } = {}) {
+  return new Promise((resolve) => {
+    if (!confirmDialog) {
+      resolve(window.confirm(message));
+      return;
+    }
+    if (confirmResolve) confirmResolve(false);
+
+    confirmResolve = resolve;
+    confirmDialogTitle.textContent = title;
+    confirmDialogMessage.textContent = message;
+    confirmDialogOk.textContent = confirmLabel;
+    confirmDialogCancel.textContent = cancelLabel;
+    confirmDialog.hidden = false;
+
+    const finish = (result) => {
+      confirmDialog.hidden = true;
+      document.removeEventListener('keydown', onKeydown);
+      confirmDialogOk.onclick = null;
+      confirmDialogCancel.onclick = null;
+      const backdrop = confirmDialog.querySelector('[data-confirm-cancel]');
+      if (backdrop) backdrop.onclick = null;
+      const r = confirmResolve;
+      confirmResolve = null;
+      r?.(result);
+    };
+
+    const onKeydown = (e) => {
+      if (confirmDialog.hidden) return;
+      if (e.key === 'Escape') finish(false);
+      if (e.key === 'Enter') finish(true);
+    };
+
+    confirmDialogOk.onclick = () => finish(true);
+    confirmDialogCancel.onclick = () => finish(false);
+    const backdrop = confirmDialog.querySelector('[data-confirm-cancel]');
+    if (backdrop) backdrop.onclick = () => finish(false);
+    document.addEventListener('keydown', onKeydown);
+    confirmDialogOk.focus();
+  });
+}
+
+function openDraftDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DRAFT_DB_NAME, 1);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      e.target.result.createObjectStore(DRAFT_STORE);
+    };
+  });
+}
+
+async function idbSetDraft(value) {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DRAFT_STORE, 'readwrite');
+    tx.objectStore(DRAFT_STORE).put(value, STORAGE_KEY);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGetDraft() {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DRAFT_STORE, 'readonly');
+    const req = tx.objectStore(DRAFT_STORE).get(STORAGE_KEY);
+    req.onsuccess = () => { db.close(); resolve(req.result); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbRemoveDraft() {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DRAFT_STORE, 'readwrite');
+    tx.objectStore(DRAFT_STORE).delete(STORAGE_KEY);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function clearAudio({ skipSave = false } = {}) {
+  if (audioObjectUrl) {
+    try { URL.revokeObjectURL(audioObjectUrl); } catch {}
+    audioObjectUrl = null;
+  }
+  audioFile.value = '';
+  try { audioPlayer.pause(); } catch {}
+  audioPlayer.removeAttribute('src');
+  audioPlayer.src = '';
+  try { audioPlayer.load(); } catch {}
+  syncAudioUi();
+  if (!skipSave) scheduleSaveProject(true);
+}
+
+function clearBackground({ skipSave = false } = {}) {
+  if (bg.url && !bg.url.startsWith('data:')) {
+    try { URL.revokeObjectURL(bg.url); } catch {}
+  }
+  bg = { type: 'none', url: null, el: null };
+  if (bgFile) bgFile.value = '';
+  syncBgVideoControls();
+  syncBgUi();
+  if (!isPreviewing) redrawIdle();
+  if (!skipSave) scheduleSaveProject(true);
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function urlToDataUrl(url, maxBytes) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  if (blob.size > maxBytes) return { dataUrl: null, tooLarge: true, size: blob.size };
+  return { dataUrl: await blobToDataUrl(blob), tooLarge: false, size: blob.size };
+}
+
+function getSettingsForStorage() {
+  return {
+    resolution: resolutionSel?.value,
+    fps: fpsSel?.value,
+    fontFamily: fontFamilyEl?.value,
+    fontSize: fontSizeEl?.value,
+    enableFade: !!enableFadeEl?.checked,
+    enableGrain: !!enableGrainEl?.checked,
+    bgFit: bgFitEl?.value,
+    bgDim: bgDimEl?.value,
+    bgMute: !!bgMutePreviewEl?.checked,
+    bgLoop: !!bgLoopEl?.checked,
+  };
+}
+
+function applySettingsFromStorage(s) {
+  if (!s) return;
+  if (resolutionSel && s.resolution) resolutionSel.value = s.resolution;
+  if (fpsSel && s.fps) fpsSel.value = s.fps;
+  if (fontFamilyEl && s.fontFamily != null) fontFamilyEl.value = s.fontFamily;
+  if (fontSizeEl && s.fontSize != null) fontSizeEl.value = s.fontSize;
+  if (enableFadeEl) enableFadeEl.checked = !!s.enableFade;
+  if (enableGrainEl) enableGrainEl.checked = !!s.enableGrain;
+  if (bgFitEl && s.bgFit) bgFitEl.value = s.bgFit;
+  if (bgDimEl && s.bgDim != null) bgDimEl.value = s.bgDim;
+  if (bgMutePreviewEl) bgMutePreviewEl.checked = s.bgMute !== false;
+  if (bgLoopEl) bgLoopEl.checked = s.bgLoop !== false;
+  initFontResolutionTracking();
+  syncBgVideoControls();
+}
+
+async function serializeProject() {
+  const serializedCards = [];
+  for (const card of cards) {
+    ensureCardDefaults(card);
+    const entry = {
+      text: card.text || '',
+      duration: card.duration,
+      pos: { ...card.pos },
+      fontFamily: card.fontFamily,
+      fontSize: card.fontSize,
+    };
+    if (card.image?.el && card.image?.url) {
+      try {
+        const { dataUrl } = await urlToDataUrl(card.image.url, MAX_CARD_IMAGE_BYTES);
+        if (dataUrl) {
+          entry.image = {
+            name: card.image.name || 'image',
+            scale: getImageScalePct(card),
+            pos: { ...getImagePos(card) },
+            dataUrl,
+          };
+        }
+      } catch {}
+    }
+    serializedCards.push(entry);
+  }
+
+  let audio = null;
+  let draftWarnings = [];
+  const audioSrc = getAudioPersistSrc();
+  if (audioSrc) {
+    try {
+      if (audioSrc.startsWith('data:')) {
+        audio = { name: audioFileName?.textContent?.replace(/ \(restored\)$/, '') || 'audio', dataUrl: audioSrc };
+      } else {
+        const { dataUrl, tooLarge } = await urlToDataUrl(audioSrc, MAX_AUDIO_BYTES);
+        if (dataUrl) {
+          audio = { name: audioFileName?.textContent?.replace(/ \(restored\)$/, '') || 'audio', dataUrl };
+        } else if (tooLarge) {
+          draftWarnings.push('Audio is too large to save in draft (max 32 MB).');
+        }
+      }
+    } catch {}
+  }
+
+  let background = null;
+  if (bg.type !== 'none' && bg.url) {
+    try {
+      const { dataUrl, tooLarge } = await urlToDataUrl(bg.url, MAX_BG_BYTES);
+      if (dataUrl) {
+        background = {
+          type: bg.type,
+          name: bgFileName?.textContent?.replace(/ \(restored\)$/, '') || 'background',
+          dataUrl,
+        };
+      } else if (tooLarge) {
+        draftWarnings.push('Background is too large to save in draft (max 32 MB).');
+      }
+    } catch {}
+  }
+
+  if (draftWarnings.length) {
+    setStatus(draftWarnings[0]);
+  }
+
+  return {
+    version: 1,
+    cards: serializedCards,
+    settings: getSettingsForStorage(),
+    selectedCardIndex,
+    lastSelectedCardIndex,
+    audio,
+    background,
+  };
+}
+
+async function saveProjectToStorage() {
+  if (isRestoringProject || !cards.length) return;
+  try {
+    const data = await serializeProject();
+    await idbSetDraft(data);
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  } catch (err) {
+    console.warn('Could not save draft', err);
+    try {
+      const data = await serializeProject();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {}
+  }
+}
+
+function scheduleSaveProject(immediate = false) {
+  if (isRestoringProject) return;
+  clearTimeout(saveProjectTimer);
+  if (immediate) {
+    saveProjectToStorage();
+    return;
+  }
+  saveProjectTimer = setTimeout(() => { saveProjectToStorage(); }, 600);
+}
+
+async function clearProjectStorage() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  try { await idbRemoveDraft(); } catch {}
+}
+
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function attachCardImageFromSaved(card, saved) {
+  if (!saved?.dataUrl) return;
+  loadImageFromDataUrl(saved.dataUrl).then((img) => {
+    card.image = {
+      url: saved.dataUrl,
+      el: img,
+      name: saved.name || 'image',
+      scale: saved.scale ?? 65,
+      pos: { ...(saved.pos || { preset: 'center', x: 0.5, y: 0.5 }) },
+    };
+    renderCardsUI();
+    scheduleSaveProject();
+    if (!isPreviewing) redrawIdle();
+  }).catch(() => {});
+}
+
+function attachBackgroundFromSaved(saved) {
+  if (!saved?.dataUrl) return;
+  if (saved.type === 'image') {
+    loadImageFromDataUrl(saved.dataUrl).then((img) => {
+      bg = { type: 'image', url: saved.dataUrl, el: img };
+      syncBgVideoControls();
+      syncBgUi(saved.name, { restored: true });
+      refreshCanvasFromSettings();
+    }).catch(() => {});
+    return;
+  }
+  if (saved.type === 'video') {
+    const vid = document.createElement('video');
+    vid.src = saved.dataUrl;
+    vid.playsInline = true;
+    vid.preload = 'auto';
+    attachBackgroundVideo(vid, saved.dataUrl, saved.name, { restored: true });
+  }
+}
+
+async function loadProjectFromStorage() {
+  let data = null;
+  try { data = await idbGetDraft(); } catch {}
+  if (!data) {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+        if (data?.cards?.length) {
+          await idbSetDraft(data);
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      } catch {}
+    }
+  }
+  if (!data?.cards?.length) return false;
+
+  isRestoringProject = true;
+  try {
+    cards.forEach(revokeCardImage);
+    cards = data.cards.map((c) => ({
+      text: c.text || '',
+      duration: Number(c.duration) || 2,
+      pos: { ...(c.pos || { preset: 'center', x: 0.5, y: 0.5, dvd: false }) },
+      fontFamily: c.fontFamily,
+      fontSize: c.fontSize,
+      image: null,
+    }));
+
+    applySettingsFromStorage(data.settings);
+
+    const sel = Number.isFinite(data.selectedCardIndex) ? data.selectedCardIndex : 0;
+    const last = Number.isFinite(data.lastSelectedCardIndex) ? data.lastSelectedCardIndex : sel;
+    selectedCardIndex = sel >= 0 && sel < cards.length ? sel : (cards.length ? 0 : null);
+    lastSelectedCardIndex = last >= 0 && last < cards.length ? last : (selectedCardIndex ?? 0);
+
+    data.cards.forEach((c, i) => {
+      if (c.image) attachCardImageFromSaved(cards[i], c.image);
+    });
+
+    if (data.background) attachBackgroundFromSaved(data.background);
+    else syncBgUi();
+
+    if (data.audio?.dataUrl) {
+      audioPlayer.src = data.audio.dataUrl;
+      audioPlayer.load();
+      syncAudioUi(data.audio.name, { restored: true });
+    } else {
+      clearAudio({ skipSave: true });
+    }
+
+    renderCardsUI();
+    updateMeta();
+    updateActionButtons();
+    if (!isPreviewing) refreshEditView();
+    return true;
+  } catch (err) {
+    console.warn('Could not restore draft', err);
+    return false;
+  } finally {
+    isRestoringProject = false;
+  }
+}
+
+function closeCanvasTextEdit(commit = true) {
+  if (!canvasTextEditEl) return;
+  const idx = canvasTextEditCardIdx;
+  if (commit && idx != null && cards[idx]) {
+    cards[idx].text = canvasTextEditEl.value;
+    const wrap = cardsEl.querySelector(`[data-card-index="${idx}"]`);
+    const ta = wrap?.querySelector('textarea[data-field="text"]');
+    if (ta) {
+      ta.value = cards[idx].text;
+      autosizeTA(ta);
+    }
+    scheduleSaveProject();
+    if (!isPreviewing) refreshEditView();
+  }
+  canvasTextEditEl.remove();
+  canvasTextEditEl = null;
+  canvasTextEditCardIdx = null;
+}
+
+function openCanvasTextEdit(cardIdx) {
+  if (isPreviewing || !cards[cardIdx]) return;
+  closeCanvasTextEdit(true);
+
+  const card = cards[cardIdx];
+  const { w, h } = getSettings();
+  const tr = getTextRect(card, w, h, getCardTextStyle(card));
+  if (!tr) return;
+
+  const wrap = previewFrame || canvas.parentElement;
+  if (!wrap) return;
+
+  const canvasRect = canvas.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
+  const scaleX = canvasRect.width / w;
+  const scaleY = canvasRect.height / h;
+
+  const ta = document.createElement('textarea');
+  ta.className = 'canvasTextEdit';
+  ta.value = card.text || '';
+  ta.spellcheck = false;
+
+  const pad = 8;
+  const left = canvasRect.left - wrapRect.left + tr.left * scaleX - pad;
+  const top = canvasRect.top - wrapRect.top + tr.top * scaleY - pad;
+  const width = Math.max(120, tr.w * scaleX + pad * 2);
+  const height = Math.max(48, tr.h * scaleY + pad * 2);
+  const fontSize = Math.max(12, (getCardTextStyle(card).fontSize || 48) * scaleY);
+
+  ta.style.left = `${left}px`;
+  ta.style.top = `${top}px`;
+  ta.style.width = `${width}px`;
+  ta.style.height = `${height}px`;
+  ta.style.fontSize = `${fontSize}px`;
+
+  ta.addEventListener('input', () => {
+    card.text = ta.value;
+    const cardTa = cardsEl.querySelector(`[data-card-index="${cardIdx}"] textarea[data-field="text"]`);
+    if (cardTa) {
+      cardTa.value = ta.value;
+      autosizeTA(cardTa);
+    }
+    scheduleSaveProject();
+  });
+
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeCanvasTextEdit(true);
+    }
+  });
+
+  ta.addEventListener('blur', () => {
+    setTimeout(() => closeCanvasTextEdit(true), 0);
+  });
+
+  wrap.appendChild(ta);
+  canvasTextEditEl = ta;
+  canvasTextEditCardIdx = cardIdx;
+  ta.focus();
+  ta.select();
+}
+
 function getCardPos(card) {
   const p = card?.pos || {};
   return {
@@ -159,6 +799,7 @@ function setSelectedCard(idx) {
   selectedCardIndex = idx;
   lastSelectedCardIndex = idx;
   renderCardsUI();
+  scheduleSaveProject();
   if (!isPreviewing) {
     refreshEditView();
     setStatus(`Editing card ${idx + 1}. Drag text or image in the preview.`);
@@ -792,13 +1433,38 @@ function syncCardControlsFromData(idx) {
 }
 
 function setupCanvasEditHandlers() {
+  canvas.addEventListener('dblclick', (e) => {
+    if (isPreviewing) return;
+    const idx = selectedCardIndex ?? getIdlePreviewCardIndex();
+    if (idx < 0 || !cards[idx]) return;
+    const { w, h } = getSettings();
+    const p = canvasPointFromEvent(e);
+    const hit = hitTestEdit(p.x, p.y, cards[idx], w, h);
+    if (hit?.kind === 'text') {
+      e.preventDefault();
+      if (selectedCardIndex == null) setSelectedCard(idx);
+      openCanvasTextEdit(idx);
+    }
+  });
+
   canvas.addEventListener('pointerdown', (e) => {
     if (isPreviewing) return;
 
     const { w, h } = getSettings();
     const p = canvasPointFromEvent(e);
 
-    if (selectedCardIndex == null) return;
+    if (selectedCardIndex == null) {
+      const idx = getIdlePreviewCardIndex();
+      if (idx < 0) return;
+      const card = cards[idx];
+      const hit = hitTestEdit(p.x, p.y, card, w, h);
+      if (hit) {
+        setSelectedCard(idx);
+        setStatus(`Editing card ${idx + 1}. Double-click text to edit in preview.`);
+      }
+      return;
+    }
+
     const card = cards[selectedCardIndex];
     if (!card) return;
 
@@ -895,6 +1561,7 @@ function setupCanvasEditHandlers() {
   });
 
   const endDrag = () => {
+    if (editDrag) scheduleSaveProject();
     editDrag = null;
     snapGuides = { vertical: null, horizontal: null };
     if (!isPreviewing) refreshEditView();
@@ -963,12 +1630,25 @@ btnPreview.addEventListener('click', () => {
 
 btnStop.addEventListener('click', stopPreview);
 
+btnBrowseAudio?.addEventListener('click', () => audioFile?.click());
+
 audioFile.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
-  if (!file) { audioPlayer.removeAttribute('src'); audioPlayer.load(); return; }
-  audioPlayer.src = URL.createObjectURL(file);
+  if (!file) { clearAudio(); return; }
+  if (audioObjectUrl) {
+    try { URL.revokeObjectURL(audioObjectUrl); } catch {}
+  }
+  audioObjectUrl = URL.createObjectURL(file);
+  audioPlayer.src = audioObjectUrl;
   audioPlayer.load();
+  syncAudioUi(file.name);
+  scheduleSaveProject(true);
 });
+
+btnClearAudio?.addEventListener('click', clearAudio);
+btnClearBg?.addEventListener('click', clearBackground);
+
+btnBrowseBg?.addEventListener('click', () => bgFile?.click());
 
 // Background upload
 function syncBgVideoControls() {
@@ -985,7 +1665,7 @@ function syncBgVideoControls() {
   pauseBgVideoForIdle();
 }
 
-function attachBackgroundVideo(vid, url) {
+function attachBackgroundVideo(vid, url, displayName, { restored = false } = {}) {
   let ready = false;
   const onReady = () => {
     if (ready) return;
@@ -994,7 +1674,9 @@ function attachBackgroundVideo(vid, url) {
     syncBgVideoControls();
     try { vid.currentTime = 0; } catch {}
     try { vid.pause(); } catch {}
+    syncBgUi(displayName, { restored });
     refreshCanvasFromSettings();
+    scheduleSaveProject(true);
   };
 
   vid.addEventListener('loadedmetadata', onReady);
@@ -1010,10 +1692,7 @@ function attachBackgroundVideo(vid, url) {
 bgFile?.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
   if (!file) {
-    if (bg.url) URL.revokeObjectURL(bg.url);
-    bg = { type: 'none', url: null, el: null };
-    syncBgVideoControls();
-    if (!isPreviewing) redrawIdle();
+    clearBackground();
     return;
   }
 
@@ -1025,7 +1704,9 @@ bgFile?.addEventListener('change', async (e) => {
     img.onload = () => {
       bg = { type: 'image', url, el: img };
       syncBgVideoControls();
+      syncBgUi(file.name);
       refreshCanvasFromSettings();
+      scheduleSaveProject(true);
     };
     img.onerror = () => setStatus('Could not load background image.');
     img.src = url;
@@ -1037,7 +1718,7 @@ bgFile?.addEventListener('change', async (e) => {
     vid.src = url;
     vid.playsInline = true;
     vid.preload = 'auto';
-    attachBackgroundVideo(vid, url);
+    attachBackgroundVideo(vid, url, file.name);
     return;
   }
 
@@ -1045,6 +1726,7 @@ bgFile?.addEventListener('change', async (e) => {
 
   bg = { type: 'none', url: null, el: null };
   syncBgVideoControls();
+  syncBgUi();
 });
 
 bgLoopEl?.addEventListener('change', () => {
@@ -1134,6 +1816,7 @@ function setCardImage(card, file) {
       pos: { preset: 'center', x: 0.5, y: 0.5 },
     };
     renderCardsUI();
+    scheduleSaveProject();
     if (!isPreviewing) redrawIdle();
   };
   img.onerror = () => {
@@ -1156,6 +1839,7 @@ function setCardImageFromUrl(card, src, name, { scale = 58, pos = { preset: 'cen
       pos: { ...pos },
     };
     renderCardsUI();
+    scheduleSaveProject();
     if (!isPreviewing) redrawIdle();
   };
   img.onerror = () => {
@@ -1308,12 +1992,12 @@ function renderCardsUI() {
       <div class="cardError" data-field="error" style="display:none;">Cannot be empty — add text or an image.</div>
 
       <div class="cardImageRow">
-        <label class="cardImageControls">
+        <div class="cardImageControls">
           <input data-field="image" type="file" accept="image/*" />
           <button type="button" class="btn small secondary" data-act="browse">Browse image</button>
           <button type="button" class="btn small secondary" data-act="clear-image" style="display:none;">Clear</button>
-          <span class="cardImageName" data-field="image-name">No image</span>
-        </label>
+        </div>
+        <span class="cardImageName" data-field="image-name">No image</span>
         <img class="cardImagePreview" data-field="image-preview" alt="" style="display:none;" />
       </div>
 
@@ -1427,6 +2111,7 @@ function renderCardsUI() {
       autosizeTA(ta);
       syncCardValidationUi();
       syncDurationSuggest();
+      scheduleSaveProject();
       if (!isPreviewing) redrawIdle();
     });
 
@@ -1434,6 +2119,7 @@ function renderCardsUI() {
       cards[idx].duration = Math.max(0.1, Number(dur.value || 0.1));
       syncDurationSuggest();
       updateMeta();
+      scheduleSaveProject();
     });
 
     durationSuggestVal.addEventListener('click', (e) => {
@@ -1495,6 +2181,7 @@ function renderCardsUI() {
       if (Number.isFinite(size) && size > 0) cards[idx].fontSize = clamp(size, 12, 200);
       else delete cards[idx].fontSize;
       wrap.classList.toggle('cardItem-customFont', cardUsesCustomTextStyle(cards[idx]));
+      scheduleSaveProject();
       if (!isPreviewing) redrawIdle();
     };
 
@@ -1553,6 +2240,7 @@ btnAdd.addEventListener('click', () => {
   cards.push({ text: 'New card', duration: 2.0, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } });
   selectedCardIndex = cards.length - 1;
   renderCardsUI();
+  scheduleSaveProject();
   if (!isPreviewing) redrawIdle();
 });
 
@@ -1566,31 +2254,62 @@ function loadExampleCards() {
     {
       text: '[ahoy]',
       duration: 3.5,
-      pos: { preset: 'custom', x: 0.5, y: 0.73, dvd: false },
-      fontSize: 52,
+      pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false },
+      fontSize: 96,
     },
   ];
   selectedCardIndex = 0;
   lastSelectedCardIndex = 0;
   renderCardsUI();
-  setCardImageFromUrl(cards[4], './assets/example-pirate-dog.png', 'example-pirate-dog.png', {
-    scale: 48,
-    pos: { preset: 'custom', x: 0.5, y: 0.5 },
-  });
   if (!isPreviewing) redrawIdle();
+  scheduleSaveProject();
 }
 
-btnLoadExample.addEventListener('click', () => {
+btnLoadExample.addEventListener('click', async () => {
+  if (cards.length) {
+    const ok = await showConfirm(
+      'Your current cards will be replaced.\n\nAudio and background will stay.',
+      { title: 'Load example?', confirmLabel: 'Load example' }
+    );
+    if (!ok) return;
+  }
+  await clearProjectStorage();
   loadExampleCards();
 });
 
-btnClear.addEventListener('click', () => {
+btnClear.addEventListener('click', async () => {
+  if (!cards.length) return;
+  const ok = await showConfirm(
+    'Your cards will be lost.\n\nAudio and background will stay.',
+    { title: 'Clear cards?', confirmLabel: 'Clear cards' }
+  );
+  if (!ok) return;
   cards.forEach(revokeCardImage);
   cards = [];
   selectedCardIndex = null;
   lastSelectedCardIndex = null;
+  await clearProjectStorage();
   renderCardsUI();
   drawFrame(0);
+});
+
+btnClearAll?.addEventListener('click', async () => {
+  if (!projectHasContent()) return;
+  const ok = await showConfirm(
+    'Cards, audio, and background will be lost.',
+    { title: 'Clear all?', confirmLabel: 'Clear all' }
+  );
+  if (!ok) return;
+  clearAudio({ skipSave: true });
+  clearBackground({ skipSave: true });
+  cards.forEach(revokeCardImage);
+  cards = [];
+  selectedCardIndex = null;
+  lastSelectedCardIndex = null;
+  await clearProjectStorage();
+  renderCardsUI();
+  drawFrame(0);
+  setStatus('Cleared. Add a card or load the example to start.');
 });
 
 /* ---- Progress bar fix ---- */
@@ -1910,22 +2629,39 @@ for (const el of [
   bgFitEl, bgDimEl, bgMutePreviewEl, bgLoopEl
 ]) {
   if (!el) continue;
-  el.addEventListener('change', () => { updateMeta(); refreshCanvasFromSettings(); });
-  el.addEventListener('input',  () => { updateMeta(); refreshCanvasFromSettings(); });
+  el.addEventListener('change', () => { updateMeta(); refreshCanvasFromSettings(); scheduleSaveProject(); });
+  el.addEventListener('input',  () => { updateMeta(); refreshCanvasFromSettings(); scheduleSaveProject(); });
 }
 
 resolutionSel?.addEventListener('change', () => {
   scaleFontSizeOnResolutionChange();
   updateMeta();
   refreshCanvasFromSettings();
+  scheduleSaveProject();
 });
+
+async function initApp() {
+  initFontResolutionTracking();
+  syncBgVideoControls();
+  syncAudioUi();
+  syncBgUi();
+
+  const restored = await loadProjectFromStorage();
+  if (!restored) loadExampleCards();
+
+  updateMeta();
+  updateActionButtons();
+  setStatus(restored
+    ? 'Restored your last draft. Double-click text in the preview to edit.'
+    : 'Select a card, then drag text (gold) or image (blue) in the preview.');
+}
 
 function setupDeselectHandlers() {
   document.addEventListener('click', (e) => {
     if (selectedCardIndex == null) return;
     if (e.target.closest('.cardItem')) return;
     if (e.target.closest('button, a')) return;
-    if (e.target.closest('#canvas, .canvasWrapTop, #resultVideo')) return;
+    if (e.target.closest('#canvas, .canvasWrapTop, #resultVideo, .canvasTextEdit')) return;
     deselectCard();
   });
 }
@@ -1933,9 +2669,11 @@ function setupDeselectHandlers() {
 setupCanvasEditHandlers();
 setupDeselectHandlers();
 
-loadExampleCards();
-initFontResolutionTracking();
-syncBgVideoControls();
-updateMeta();
-updateActionButtons();
-setStatus('Select a card, then drag text (gold) or image (blue) in the preview.');
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    clearTimeout(saveProjectTimer);
+    saveProjectToStorage();
+  }
+});
+
+initApp();

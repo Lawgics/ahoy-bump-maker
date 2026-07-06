@@ -1,0 +1,24 @@
+# Cursor / local IDE
+.cursor/
+
+# Canvas / encoding junk (never commit)
+_*.canvas.tsx
+_fix_*.py
+deploy.ps1
+
+# Logo design mockups (production assets: ahoy-logo.svg, ahoy-mark.svg)
+web/assets/ahoy-ship-*
+web/assets/ship-*
+
+# Design-only generator scripts
+scripts/write-megaphone-assets.py
+scripts/write-ship-*.py
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor swap
+*.swp
+*~

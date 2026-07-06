@@ -5,21 +5,21 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>[ahoy]</title>
 
-  <link rel="icon" href="./assets/favicon.ico" sizes="any">
+  <link rel="icon" href="./assets/ahoy-mark.svg" type="image/svg+xml">
 
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <div class="dot"></div>
-      <div class="title">[ahoy]</div>
+      <img class="brandLogo" src="./assets/ahoy-logo.svg" alt="[ahoy]" width="160" height="40" />
       <div class="subtitle">plex announcements</div>
     </div>
 
     <div class="actions">
       <button id="btnPreview" class="btn">Preview</button>
       <button id="btnStop" class="btn secondary" disabled>Stop</button>
+      <button id="btnClearAll" class="btn secondary">Clear all</button>
       <button id="btnExport" class="btn primary">Export MP4</button>
     </div>
   </header>
@@ -59,13 +59,13 @@
             <h2>Cards</h2>
             <div class="row">
               <button id="btnAdd" class="btn small">+ Add card</button>
-              <button id="btnLoadExample" class="btn small secondary">Load example</button>
-              <button id="btnClear" class="btn small secondary">Clear</button>
+              <button type="button" id="btnLoadExample" class="btn small secondary">Load example</button>
+              <button type="button" id="btnClear" class="btn small secondary">Clear</button>
             </div>
           </div>
 
           <div class="hint" style="margin-bottom:10px;">
-            Click a card to edit. Drag the grip to reorder cards.
+            Click a card to edit. Double-click text in the preview to edit it there. Drag the grip to reorder cards.
           </div>
 
           <div id="cards"></div>
@@ -131,20 +131,39 @@
 
           <div class="twoUp">
             <div class="box">
-              <h2>Audio (optional)</h2>
-              <input id="audioFile" type="file" accept="audio/*" />
+              <div class="boxHeaderRow">
+                <h2>Audio (optional)</h2>
+                <button type="button" id="btnClearAudio" class="btn small secondary" hidden>Clear</button>
+              </div>
+              <div class="mediaUploadRow">
+                <input id="audioFile" type="file" accept="audio/*" hidden />
+                <button type="button" id="btnBrowseAudio" class="btn small secondary">Choose audio</button>
+                <span id="audioFileName" class="mediaFileName">No audio</span>
+              </div>
+              <div id="audioLoadedBlock" class="audioLoadedBlock" hidden>
+                <audio id="audioPlayer" controls></audio>
+              </div>
               <div class="hint" style="margin-top:8px;">
                 Upload a song/beat. Plays during Preview and is included in Export.
               </div>
-              <audio id="audioPlayer" controls></audio>
             </div>
 
             <div class="box">
-              <h2>Background (optional)</h2>
-              <label>
-                (image/video)
-                <input id="bgFile" type="file" accept="image/*,video/*" />
-              </label>
+              <div class="boxHeaderRow">
+                <h2>Background (optional)</h2>
+                <button type="button" id="btnClearBg" class="btn small secondary" hidden>Clear</button>
+              </div>
+              <div class="mediaUploadRow">
+                <input id="bgFile" type="file" accept="image/*,video/*" hidden />
+                <button type="button" id="btnBrowseBg" class="btn small secondary">Choose file</button>
+                <span id="bgFileName" class="mediaFileName">No background</span>
+              </div>
+              <div id="bgPreviewWrap" class="mediaPreviewWrap" hidden>
+                <img id="bgImagePreview" class="mediaPreview" alt="" />
+              </div>
+              <div class="hint" style="margin-top:8px;">
+                Upload an image or video for the full-frame background behind your cards.
+              </div>
 
               <div class="grid2" style="margin-top:10px;">
                 <label>
@@ -173,9 +192,6 @@
                     <span>Loop background video</span>
                   </label>
                 </div>
-                <div class="hint">
-                  Video backgrounds only — does not affect your uploaded music.
-                </div>
               </div>
             </div>
           </div>
@@ -183,6 +199,18 @@
       </div>
     </section>
   </main>
+
+  <div id="confirmDialog" class="confirmDialog" hidden>
+    <div class="confirmDialog__backdrop" data-confirm-cancel></div>
+    <div class="confirmDialog__panel" role="alertdialog" aria-modal="true" aria-labelledby="confirmDialogTitle">
+      <div id="confirmDialogTitle" class="confirmDialog__title"></div>
+      <p id="confirmDialogMessage" class="confirmDialog__message"></p>
+      <div class="confirmDialog__actions">
+        <button type="button" id="confirmDialogCancel" class="btn secondary small">Cancel</button>
+        <button type="button" id="confirmDialogOk" class="btn primary small">Confirm</button>
+      </div>
+    </div>
+  </div>
 
   <footer class="appFooter">
     Based on <a href="https://github.com/Matthunker/as-bump-maker" target="_blank" rel="noopener">as-bump-maker</a> by
