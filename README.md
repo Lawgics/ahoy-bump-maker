@@ -143,7 +143,7 @@ Once you've exported a bump from [ahoy], you need to get it in front of your use
 | Method | Good for | Status |
 |--------|----------|--------|
 | **Pre-rolls** | Time-sensitive notices before movies | Documented below |
-| **Home screen** | Longer-lived messages, browsing | Guide coming soon |
+| **Home screen collection** | Ongoing notices users browse on their own | Documented below |
 
 ### Pre-rolls (play before movies)
 
@@ -183,9 +183,32 @@ Pre-rolls only play when Cinema Trailers is turned on. From Plex's docs:
 
 So: server path configured ✓ is not enough — each viewer needs Cinema Trailers on in their client **and** in that library's advanced settings. Worth mentioning to your users when you roll out announcements.
 
-### On your home screen (coming soon)
+### Home screen collection (see it when they open Plex)
 
-We're working on docs for surfacing announcements on the Plex home page — e.g. a pinned **collection** or playlist (possibly with tools like [Maintainerr](https://github.com/Maintainerr/Maintainerr) or [Agregarr](https://github.com/agregarr/agregarr)) instead of a full separate library. Step-by-step guide TBD.
+Good for library updates, recurring notices, and anything users should spot on their own — without needing Cinema Trailers or starting a movie.
+
+Unlike pre-rolls, a home collection does **not** depend on each viewer enabling Cinema Trailers. They open Plex, see your **Announcements** row, and watch when they want.
+
+1. **Copy your exported MP4** into a folder your Plex server can read (same as pre-rolls — local disk, NAS share, etc.).
+2. **Add that folder to a library.** Open the library → **Manage Library** → **Edit** → **Add folders** → add your announcements folder. Let Plex scan until the videos appear.
+3. **Tag each announcement into a collection.** Click the pencil on an announcement → **Tags** → **Collections** → add or create an **Announcements** collection (repeat for each video you want in the hub).
+4. **Pin the collection to Friends' Home.** Either:
+   - Open the **Announcements** collection → click the **⋯** on the collection poster → **Visible on** → **Friends' Home**, or
+   - **Settings** → **Manage** → **Libraries** → **Manage Recommendations** → check **Friends' Home** for the collection and drag it to the top so it shows first.
+
+Your friends see the **Announcements** collection as soon as they open Plex and can check for new videos on their own.
+
+**Tips:**
+
+- **Name files clearly** — e.g. `Server Announcement 2026-07-10.mp4` so users know what they're opening and what's new.
+- **Use your logo as the collection poster** — edit the collection poster so the hub is recognizable on the home screen. You can also set a custom poster per video if you want.
+- **Keep the collection current** — remove old announcements from the collection (or library) when they're no longer relevant so the hub stays useful.
+- **Rescan after uploads** — after you drop a new MP4 in the folder, run a library scan so it shows up in Plex quickly.
+- **Pair with pre-rolls if you want both** — urgent "heads up" in a pre-roll, plus the same (or older) announcements in the home collection for anyone who missed them.
+
+#### Agregarr (optional)
+
+The steps above use only Plex. If you already run [Agregarr](https://github.com/agregarr/agregarr), it can make the same setup easier — especially pinning your **Announcements** collection to the top of Friends' Home without digging through server recommendation settings.
 
 ## Recent improvements
 
@@ -198,7 +221,6 @@ We're working on docs for surfacing announcements on the Plex home page — e.g.
 
 - **Templates** — Save a reusable starting point with your usual greeting, logo, and sign-off, then load it when you need a new announcement and only fill in the cards in between.
 - Export directly to a server folder (preroll path via volume mount + upload API)
-- Home screen announcement guide (collections / pinned hubs)
 - Optional basic auth for homelab deployments
 
 ## Credits & lineage
