@@ -17,6 +17,22 @@ const btnAdd = $('#btnAdd');
 const btnLoadExample = $('#btnLoadExample');
 const btnClear = $('#btnClear');
 
+const templateSelect = $('#templateSelect');
+const btnLoadTemplate = $('#btnLoadTemplate');
+const btnSaveTemplate = $('#btnSaveTemplate');
+const btnDeleteTemplate = $('#btnDeleteTemplate');
+const btnExportTemplate = $('#btnExportTemplate');
+const btnImportTemplate = $('#btnImportTemplate');
+const templateImportFile = $('#templateImportFile');
+
+const promptDialog = $('#promptDialog');
+const promptDialogTitle = $('#promptDialogTitle');
+const promptDialogMessage = $('#promptDialogMessage');
+const promptDialogLabel = $('#promptDialogLabel');
+const promptDialogInput = $('#promptDialogInput');
+const promptDialogOk = $('#promptDialogOk');
+const promptDialogCancel = $('#promptDialogCancel');
+
 const audioFile = $('#audioFile');
 const btnBrowseAudio = $('#btnBrowseAudio');
 const btnClearAudio = $('#btnClearAudio');
@@ -54,6 +70,10 @@ const previewFrame = $('#previewFrame');
 const STORAGE_KEY = 'ahoy-draft-v1';
 const DRAFT_DB_NAME = 'ahoy-draft-db';
 const DRAFT_STORE = 'draft';
+const TEMPLATE_STORE = 'templates';
+const TEMPLATE_KIND = 'ahoy-template';
+const TEMPLATE_VERSION = 1;
+const DB_VERSION = 2;
 const MAX_CARD_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
 const MAX_BG_BYTES = 32 * 1024 * 1024;
@@ -284,13 +304,73 @@ function showConfirm(message, { title = 'Are you sure?', confirmLabel = 'Confirm
   });
 }
 
+let promptResolve = null;
+
+function showPrompt(message, {
+  title = 'Save',
+  label = 'Name',
+  defaultValue = '',
+  confirmLabel = 'Save',
+  cancelLabel = 'Cancel',
+} = {}) {
+  return new Promise((resolve) => {
+    if (!promptDialog || !promptDialogInput) {
+      const v = window.prompt(message, defaultValue);
+      resolve(v == null ? null : String(v).trim());
+      return;
+    }
+    if (promptResolve) promptResolve(null);
+
+    promptResolve = resolve;
+    promptDialogTitle.textContent = title;
+    promptDialogMessage.textContent = message;
+    if (promptDialogLabel) promptDialogLabel.textContent = label;
+    promptDialogInput.value = defaultValue;
+    promptDialogOk.textContent = confirmLabel;
+    promptDialogCancel.textContent = cancelLabel;
+    promptDialog.hidden = false;
+
+    const finish = (result) => {
+      promptDialog.hidden = true;
+      document.removeEventListener('keydown', onKeydown);
+      promptDialogOk.onclick = null;
+      promptDialogCancel.onclick = null;
+      const backdrop = promptDialog.querySelector('[data-prompt-cancel]');
+      if (backdrop) backdrop.onclick = null;
+      const r = promptResolve;
+      promptResolve = null;
+      r?.(result);
+    };
+
+    const onKeydown = (e) => {
+      if (promptDialog.hidden) return;
+      if (e.key === 'Escape') finish(null);
+      if (e.key === 'Enter') finish(promptDialogInput.value.trim() || null);
+    };
+
+    promptDialogOk.onclick = () => finish(promptDialogInput.value.trim() || null);
+    promptDialogCancel.onclick = () => finish(null);
+    const backdrop = promptDialog.querySelector('[data-prompt-cancel]');
+    if (backdrop) backdrop.onclick = () => finish(null);
+    document.addEventListener('keydown', onKeydown);
+    promptDialogInput.focus();
+    promptDialogInput.select();
+  });
+}
+
 function openDraftDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DRAFT_DB_NAME, 1);
+    const req = indexedDB.open(DRAFT_DB_NAME, DB_VERSION);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = (e) => {
-      e.target.result.createObjectStore(DRAFT_STORE);
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(DRAFT_STORE)) {
+        db.createObjectStore(DRAFT_STORE);
+      }
+      if (!db.objectStoreNames.contains(TEMPLATE_STORE)) {
+        db.createObjectStore(TEMPLATE_STORE);
+      }
     };
   });
 }
@@ -323,6 +403,84 @@ async function idbRemoveDraft() {
     tx.oncomplete = () => { db.close(); resolve(); };
     tx.onerror = () => reject(tx.error);
   });
+}
+
+async function idbListTemplateNames() {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(TEMPLATE_STORE, 'readonly');
+    const req = tx.objectStore(TEMPLATE_STORE).getAll();
+    req.onsuccess = () => {
+      db.close();
+      const items = (req.result || [])
+        .filter((t) => t?.name && t?.cards?.length)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' }));
+      resolve(items);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGetTemplate(name) {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(TEMPLATE_STORE, 'readonly');
+    const req = tx.objectStore(TEMPLATE_STORE).get(name);
+    req.onsuccess = () => { db.close(); resolve(req.result); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSetTemplate(name, value) {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(TEMPLATE_STORE, 'readwrite');
+    tx.objectStore(TEMPLATE_STORE).put(value, name);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbDeleteTemplate(name) {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(TEMPLATE_STORE, 'readwrite');
+    tx.objectStore(TEMPLATE_STORE).delete(name);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function normalizeTemplateName(name) {
+  return String(name || '').trim().slice(0, 60);
+}
+
+function slugifyTemplateName(name) {
+  return normalizeTemplateName(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'template';
+}
+
+function isValidTemplateData(data) {
+  return data?.kind === TEMPLATE_KIND
+    && data?.version === TEMPLATE_VERSION
+    && Array.isArray(data.cards)
+    && data.cards.length > 0
+    && typeof data.name === 'string'
+    && data.name.trim();
+}
+
+function describeTemplateLoad(data) {
+  const parts = ['cards and text style'];
+  if (data.audio?.dataUrl) parts.push('audio');
+  if (data.background?.dataUrl) parts.push('background');
+  const kept = [];
+  if (!data.audio?.dataUrl) kept.push('audio');
+  if (!data.background?.dataUrl) kept.push('background');
+  let msg = `Load template "${data.name}"?\n\nThis will replace ${parts.join(', ')}.`;
+  if (kept.length) msg += `\n\nYour current ${kept.join(' and ')} will stay.`;
+  return msg;
 }
 
 function clearAudio({ skipSave = false } = {}) {
@@ -382,18 +540,32 @@ function getSettingsForStorage() {
   };
 }
 
-function applySettingsFromStorage(s) {
+function applyTextSettingsFromStorage(s) {
   if (!s) return;
-  if (resolutionSel && s.resolution) resolutionSel.value = s.resolution;
-  if (fpsSel && s.fps) fpsSel.value = s.fps;
   if (fontFamilyEl && s.fontFamily != null) fontFamilyEl.value = s.fontFamily;
   if (fontSizeEl && s.fontSize != null) fontSizeEl.value = s.fontSize;
   if (enableFadeEl) enableFadeEl.checked = !!s.enableFade;
   if (enableGrainEl) enableGrainEl.checked = !!s.enableGrain;
+}
+
+function applyBgSettingsFromStorage(s) {
+  if (!s) return;
   if (bgFitEl && s.bgFit) bgFitEl.value = s.bgFit;
   if (bgDimEl && s.bgDim != null) bgDimEl.value = s.bgDim;
   if (bgMutePreviewEl) bgMutePreviewEl.checked = s.bgMute !== false;
   if (bgLoopEl) bgLoopEl.checked = s.bgLoop !== false;
+}
+
+function applyOutputSettingsFromStorage(s) {
+  if (!s) return;
+  if (resolutionSel && s.resolution) resolutionSel.value = s.resolution;
+  if (fpsSel && s.fps) fpsSel.value = s.fps;
+}
+
+function applySettingsFromStorage(s) {
+  applyTextSettingsFromStorage(s);
+  applyBgSettingsFromStorage(s);
+  applyOutputSettingsFromStorage(s);
   initFontResolutionTracking();
   syncBgVideoControls();
 }
@@ -549,6 +721,79 @@ function attachBackgroundFromSaved(saved) {
   }
 }
 
+async function applyProjectData(data, { mode = 'draft' } = {}) {
+  if (!data?.cards?.length) return false;
+
+  const isTemplate = mode === 'template';
+  const hasAudio = !!data.audio?.dataUrl;
+  const hasBackground = !!data.background?.dataUrl;
+  const applyAudio = isTemplate ? hasAudio : true;
+  const applyBackground = isTemplate ? hasBackground : true;
+  const applyBgSettings = isTemplate ? hasBackground : true;
+  const applyOutput = !isTemplate;
+
+  isRestoringProject = true;
+  try {
+    cards.forEach(revokeCardImage);
+    cards = data.cards.map((c) => ({
+      text: c.text || '',
+      duration: Number(c.duration) || 2,
+      pos: { ...(c.pos || { preset: 'center', x: 0.5, y: 0.5, dvd: false }) },
+      fontFamily: c.fontFamily,
+      fontSize: c.fontSize,
+      image: null,
+    }));
+
+    applyTextSettingsFromStorage(data.settings);
+    if (applyBgSettings) applyBgSettingsFromStorage(data.settings);
+    if (applyOutput) applyOutputSettingsFromStorage(data.settings);
+    initFontResolutionTracking();
+    syncBgVideoControls();
+
+    const sel = Number.isFinite(data.selectedCardIndex) ? data.selectedCardIndex : 0;
+    const last = Number.isFinite(data.lastSelectedCardIndex) ? data.lastSelectedCardIndex : sel;
+    selectedCardIndex = sel >= 0 && sel < cards.length ? sel : (cards.length ? 0 : null);
+    lastSelectedCardIndex = last >= 0 && last < cards.length ? last : (selectedCardIndex ?? 0);
+
+    data.cards.forEach((c, i) => {
+      if (c.image) attachCardImageFromSaved(cards[i], c.image);
+    });
+
+    if (applyBackground) {
+      if (data.background) {
+        if (bg.type !== 'none') clearBackground({ skipSave: true });
+        attachBackgroundFromSaved(data.background);
+      } else if (!isTemplate) {
+        clearBackground({ skipSave: true });
+      }
+    } else {
+      syncBgUi();
+    }
+
+    if (applyAudio) {
+      if (data.audio?.dataUrl) {
+        clearAudio({ skipSave: true });
+        audioPlayer.src = data.audio.dataUrl;
+        audioPlayer.load();
+        syncAudioUi(data.audio.name, { restored: true });
+      } else if (!isTemplate) {
+        clearAudio({ skipSave: true });
+      }
+    }
+
+    renderCardsUI();
+    updateMeta();
+    updateActionButtons();
+    if (!isPreviewing) refreshEditView();
+    return true;
+  } catch (err) {
+    console.warn('Could not apply project', err);
+    return false;
+  } finally {
+    isRestoringProject = false;
+  }
+}
+
 async function loadProjectFromStorage() {
   let data = null;
   try { data = await idbGetDraft(); } catch {}
@@ -565,52 +810,7 @@ async function loadProjectFromStorage() {
     }
   }
   if (!data?.cards?.length) return false;
-
-  isRestoringProject = true;
-  try {
-    cards.forEach(revokeCardImage);
-    cards = data.cards.map((c) => ({
-      text: c.text || '',
-      duration: Number(c.duration) || 2,
-      pos: { ...(c.pos || { preset: 'center', x: 0.5, y: 0.5, dvd: false }) },
-      fontFamily: c.fontFamily,
-      fontSize: c.fontSize,
-      image: null,
-    }));
-
-    applySettingsFromStorage(data.settings);
-
-    const sel = Number.isFinite(data.selectedCardIndex) ? data.selectedCardIndex : 0;
-    const last = Number.isFinite(data.lastSelectedCardIndex) ? data.lastSelectedCardIndex : sel;
-    selectedCardIndex = sel >= 0 && sel < cards.length ? sel : (cards.length ? 0 : null);
-    lastSelectedCardIndex = last >= 0 && last < cards.length ? last : (selectedCardIndex ?? 0);
-
-    data.cards.forEach((c, i) => {
-      if (c.image) attachCardImageFromSaved(cards[i], c.image);
-    });
-
-    if (data.background) attachBackgroundFromSaved(data.background);
-    else syncBgUi();
-
-    if (data.audio?.dataUrl) {
-      audioPlayer.src = data.audio.dataUrl;
-      audioPlayer.load();
-      syncAudioUi(data.audio.name, { restored: true });
-    } else {
-      clearAudio({ skipSave: true });
-    }
-
-    renderCardsUI();
-    updateMeta();
-    updateActionButtons();
-    if (!isPreviewing) refreshEditView();
-    return true;
-  } catch (err) {
-    console.warn('Could not restore draft', err);
-    return false;
-  } finally {
-    isRestoringProject = false;
-  }
+  return applyProjectData(data, { mode: 'draft' });
 }
 
 function closeCanvasTextEdit(commit = true) {
@@ -2265,6 +2465,197 @@ function loadExampleCards() {
   scheduleSaveProject();
 }
 
+async function buildTemplateRecord(name) {
+  const project = await serializeProject();
+  return {
+    kind: TEMPLATE_KIND,
+    version: TEMPLATE_VERSION,
+    name: normalizeTemplateName(name),
+    savedAt: new Date().toISOString(),
+    cards: project.cards,
+    settings: project.settings,
+    audio: project.audio,
+    background: project.background,
+    selectedCardIndex: project.selectedCardIndex,
+    lastSelectedCardIndex: project.lastSelectedCardIndex,
+  };
+}
+
+async function refreshTemplatesUi(preferredName) {
+  if (!templateSelect) return;
+  let templates = [];
+  try { templates = await idbListTemplateNames(); } catch {}
+  const prev = preferredName || templateSelect.value;
+  templateSelect.innerHTML = '';
+  if (!templates.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No templates saved';
+    templateSelect.appendChild(opt);
+    templateSelect.disabled = true;
+    if (btnLoadTemplate) btnLoadTemplate.disabled = true;
+    if (btnDeleteTemplate) btnDeleteTemplate.disabled = true;
+    if (btnExportTemplate) btnExportTemplate.disabled = true;
+    return;
+  }
+  templateSelect.disabled = false;
+  for (const t of templates) {
+    const opt = document.createElement('option');
+    opt.value = t.name;
+    const bits = ['cards'];
+    if (t.audio?.dataUrl) bits.push('audio');
+    if (t.background?.dataUrl) bits.push('background');
+    opt.textContent = `${t.name} (${bits.join(', ')})`;
+    templateSelect.appendChild(opt);
+  }
+  const match = templates.find((t) => t.name === prev);
+  templateSelect.value = match ? match.name : templates[0].name;
+  const hasSel = !!templateSelect.value;
+  if (btnLoadTemplate) btnLoadTemplate.disabled = !hasSel;
+  if (btnDeleteTemplate) btnDeleteTemplate.disabled = !hasSel;
+  if (btnExportTemplate) btnExportTemplate.disabled = !hasSel;
+}
+
+async function saveCurrentAsTemplate(name) {
+  const normalized = normalizeTemplateName(name);
+  if (!normalized) {
+    setStatus('Enter a template name.');
+    return false;
+  }
+  if (!cards.length) {
+    setStatus('Add at least one card before saving a template.');
+    return false;
+  }
+  const existing = await idbGetTemplate(normalized).catch(() => null);
+  if (existing) {
+    const ok = await showConfirm(
+      `Replace the saved template "${normalized}"?`,
+      { title: 'Overwrite template?', confirmLabel: 'Replace' }
+    );
+    if (!ok) return false;
+  }
+  const record = await buildTemplateRecord(normalized);
+  await idbSetTemplate(normalized, record);
+  await refreshTemplatesUi(normalized);
+  const bits = ['cards'];
+  if (record.audio?.dataUrl) bits.push('audio');
+  if (record.background?.dataUrl) bits.push('background');
+  setStatus(`Template "${normalized}" saved (${bits.join(', ')}).`);
+  return true;
+}
+
+async function loadSelectedTemplate() {
+  const name = templateSelect?.value;
+  if (!name) return;
+  const data = await idbGetTemplate(name);
+  if (!data?.cards?.length) {
+    setStatus('Template not found or empty.');
+    return;
+  }
+  if (projectHasContent()) {
+    const ok = await showConfirm(
+      describeTemplateLoad(data),
+      { title: 'Load template?', confirmLabel: 'Load template' }
+    );
+    if (!ok) return;
+  }
+  const ok = await applyProjectData(data, { mode: 'template' });
+  if (!ok) {
+    setStatus('Could not load template.');
+    return;
+  }
+  scheduleSaveProject(true);
+  setStatus(`Loaded template "${data.name}". Edit the cards and export when ready.`);
+}
+
+btnSaveTemplate?.addEventListener('click', async () => {
+  const name = await showPrompt(
+    'Save your current cards and settings as a reusable template.',
+    { title: 'Save as template', label: 'Template name', confirmLabel: 'Save template' }
+  );
+  if (name == null) return;
+  await saveCurrentAsTemplate(name);
+});
+
+btnLoadTemplate?.addEventListener('click', () => { loadSelectedTemplate(); });
+
+templateSelect?.addEventListener('change', () => {
+  const hasSel = !!templateSelect.value;
+  if (btnLoadTemplate) btnLoadTemplate.disabled = !hasSel;
+  if (btnDeleteTemplate) btnDeleteTemplate.disabled = !hasSel;
+  if (btnExportTemplate) btnExportTemplate.disabled = !hasSel;
+});
+
+btnDeleteTemplate?.addEventListener('click', async () => {
+  const name = templateSelect?.value;
+  if (!name) return;
+  const ok = await showConfirm(
+    `Delete template "${name}" from this browser?\n\nThis cannot be undone.`,
+    { title: 'Delete template?', confirmLabel: 'Delete' }
+  );
+  if (!ok) return;
+  await idbDeleteTemplate(name);
+  await refreshTemplatesUi();
+  setStatus(`Deleted template "${name}".`);
+});
+
+btnExportTemplate?.addEventListener('click', async () => {
+  const name = templateSelect?.value;
+  if (!name) return;
+  const data = await idbGetTemplate(name);
+  if (!data) {
+    setStatus('Template not found.');
+    return;
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slugifyTemplateName(name)}.ahoy.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus(`Exported template "${name}".`);
+});
+
+btnImportTemplate?.addEventListener('click', () => {
+  templateImportFile?.click();
+});
+
+templateImportFile?.addEventListener('change', async () => {
+  const file = templateImportFile.files?.[0];
+  templateImportFile.value = '';
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!isValidTemplateData(data)) {
+      setStatus('Not a valid [ahoy] template file.');
+      return;
+    }
+    const name = normalizeTemplateName(data.name);
+    const existing = await idbGetTemplate(name).catch(() => null);
+    if (existing) {
+      const ok = await showConfirm(
+        `A template named "${name}" already exists.\n\nReplace it with the imported file?`,
+        { title: 'Overwrite template?', confirmLabel: 'Replace' }
+      );
+      if (!ok) return;
+    }
+    const record = {
+      ...data,
+      name,
+      kind: TEMPLATE_KIND,
+      version: TEMPLATE_VERSION,
+      savedAt: data.savedAt || new Date().toISOString(),
+    };
+    await idbSetTemplate(name, record);
+    await refreshTemplatesUi(name);
+    setStatus(`Imported template "${name}".`);
+  } catch {
+    setStatus('Could not read template file.');
+  }
+});
+
 btnLoadExample.addEventListener('click', async () => {
   if (cards.length) {
     const ok = await showConfirm(
@@ -2648,6 +3039,8 @@ async function initApp() {
 
   const restored = await loadProjectFromStorage();
   if (!restored) loadExampleCards();
+
+  await refreshTemplatesUi();
 
   updateMeta();
   updateActionButtons();

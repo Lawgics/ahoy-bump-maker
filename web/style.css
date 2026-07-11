@@ -272,6 +272,52 @@ input:focus,select:focus,textarea:focus{border-color:#3a3a3a}
   margin:0;
 }
 .boxSpaced{ margin-top:14px; }
+
+.templatesBox{ padding:12px 14px; }
+.templatesHint{ margin-top:0; margin-bottom:10px; }
+.templatesRow{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:10px;
+  align-items:end;
+}
+.templatesSelectLabel{ margin:0; min-width:0; }
+.templatesActions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.templatesFileRow{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+.templatesSep{ color:var(--muted); font-size:12px; }
+.btn.linkish{
+  border-color:transparent;
+  background:transparent;
+  padding-left:0;
+  padding-right:0;
+  font-weight:600;
+  color:var(--muted);
+}
+.btn.linkish:hover:not(:disabled){ color:var(--text); filter:none; }
+.btn.linkish:disabled{ opacity:.35; }
+.promptDialog__field{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin:0 0 14px;
+  font-size:12px;
+  color:var(--muted);
+}
+.promptDialog__field input{ width:100%; }
+
+@media (max-width: 720px){
+  .templatesRow{ grid-template-columns:1fr; }
+}
 .settingsCol{
   display:flex;
   flex-direction:column;

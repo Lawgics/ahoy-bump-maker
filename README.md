@@ -36,6 +36,7 @@ _App walkthrough (screen recording) coming soon._
 - **Preview the full video** — Hit **Preview** to watch the whole announcement before you commit.
 - **Export an MP4** — One click downloads a file you can drop into Plex pre-rolls, NeXroll, or a media folder. Ready to show your users.
 - **Pick up where you left off** — Your work saves automatically in the browser while you edit.
+- **Save templates** — Store reusable decks (greeting, logo, sign-off, music, and more) in the browser or export a `.ahoy.json` file to back up or move between machines.
 - **Preview uploads** — Play audio and check background files in the editor before you export.
 
 ## Get started
@@ -110,7 +111,7 @@ For the most reliable **Export MP4** experience (especially in Firefox), use the
 
 ### Create your announcement
 
-1. Click **Load example** to see a ready-made maintenance bump, or **+ Add card** to start fresh.
+1. Click **Load example** to see a ready-made maintenance bump, **load a saved template**, or **+ Add card** to start fresh.
 2. For each card:
    - Type your **Text** (or leave blank if the card is image-only)
    - Set **Seconds** (or click **Suggested: X.Xs** to apply the recommended time)
@@ -212,6 +213,7 @@ The steps above use only Plex. If you already run [Agregarr](https://github.com/
 
 ## Recent improvements
 
+- **Templates** — Save reusable decks in the browser, load them for new announcements, and export/import `.ahoy.json` backup files. Templates only replace audio or background if those were saved with the template.
 - **Draft auto-save** — Your cards, timing, audio, and background come back after a browser refresh.
 - **Safer clears** — **Clear cards**, **Clear all**, and **Load example** ask for confirmation first.
 - **Media previews** — Hear uploaded audio in the editor; see a thumbnail for image or video backgrounds.
@@ -219,7 +221,6 @@ The steps above use only Plex. If you already run [Agregarr](https://github.com/
 
 ## Planned
 
-- **Templates** — Save a reusable starting point with your usual greeting, logo, and sign-off, then load it when you need a new announcement and only fill in the cards in between.
 - Export directly to a server folder (preroll path via volume mount + upload API)
 - Optional basic auth for homelab deployments
 

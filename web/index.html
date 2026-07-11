@@ -67,6 +67,30 @@
             Click a card to edit. Double-click text in the preview to edit it there. Drag the grip to reorder cards.
           </div>
 
+          <div class="box boxSpaced templatesBox">
+            <h2>Templates</h2>
+            <p class="hint templatesHint">Save a reusable deck — greeting, logo, sign-off, music, and more. Load one to start a new announcement.</p>
+            <div class="templatesRow">
+              <label class="templatesSelectLabel">
+                Saved template
+                <select id="templateSelect">
+                  <option value="">No templates saved</option>
+                </select>
+              </label>
+              <div class="templatesActions">
+                <button type="button" id="btnLoadTemplate" class="btn small secondary" disabled>Load</button>
+                <button type="button" id="btnSaveTemplate" class="btn small">Save as…</button>
+                <button type="button" id="btnDeleteTemplate" class="btn small secondary" disabled>Delete</button>
+              </div>
+            </div>
+            <div class="templatesFileRow">
+              <button type="button" id="btnExportTemplate" class="btn small secondary linkish" disabled>Export template</button>
+              <span class="templatesSep">·</span>
+              <button type="button" id="btnImportTemplate" class="btn small secondary linkish">Import template</button>
+              <input id="templateImportFile" type="file" accept=".json,.ahoy.json,application/json" hidden />
+            </div>
+          </div>
+
           <div id="cards"></div>
 
           <div class="box boxSpaced">
@@ -198,6 +222,22 @@
       </div>
     </section>
   </main>
+
+  <div id="promptDialog" class="confirmDialog" hidden>
+    <div class="confirmDialog__backdrop" data-prompt-cancel></div>
+    <div class="confirmDialog__panel" role="dialog" aria-modal="true" aria-labelledby="promptDialogTitle">
+      <div id="promptDialogTitle" class="confirmDialog__title"></div>
+      <p id="promptDialogMessage" class="confirmDialog__message"></p>
+      <label class="promptDialog__field">
+        <span id="promptDialogLabel">Name</span>
+        <input id="promptDialogInput" type="text" autocomplete="off" />
+      </label>
+      <div class="confirmDialog__actions">
+        <button type="button" id="promptDialogCancel" class="btn secondary small">Cancel</button>
+        <button type="button" id="promptDialogOk" class="btn primary small">Save</button>
+      </div>
+    </div>
+  </div>
 
   <div id="confirmDialog" class="confirmDialog" hidden>
     <div class="confirmDialog__backdrop" data-confirm-cancel></div>
