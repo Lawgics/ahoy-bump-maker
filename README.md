@@ -33,10 +33,10 @@ _App walkthrough (screen recording) coming soon._
 - **Position everything visually** — Click a card, then drag text and images in the preview until the layout looks right. No coordinate math.
 - **Add atmosphere (optional)** — Background image or video (with mute/loop controls), light grain, quick fades, background music — or skip all of it and keep the classic black bump look.
 - **Choose output size** — **Output** sets resolution and FPS; font size scales automatically when you change resolution.
-- **Preview the full video** — Hit **Preview** to watch the whole announcement before you commit.
-- **Export an MP4** — One click downloads a file you can drop into Plex pre-rolls, NeXroll, or a media folder. Ready to show your users.
+- **Preview the full video** — Hit **Preview** to watch the whole announcement; a progress bar shows how far you are.
+- **Export an MP4** — One click downloads a file you can drop into Plex pre-rolls, NeXroll, or a media folder. After export you can play the result in the app, then go back to editing.
 - **Pick up where you left off** — Your work saves automatically in the browser while you edit.
-- **Save templates** — Store reusable decks (greeting, logo, sign-off, music, and more) in the browser or export a `.ahoy.json` file to back up or move between machines.
+- **Save templates** — Use **Templates** in the top bar to save a reusable deck (greeting, logo, sign-off, music, and more), load it for the next announcement, or export/import a backup file.
 - **Preview uploads** — Play audio and check background files in the editor before you export.
 
 ## Get started
@@ -111,7 +111,7 @@ For the most reliable **Export MP4** experience (especially in Firefox), use the
 
 ### Create your announcement
 
-1. Click **Load example** to see a ready-made maintenance bump, **load a saved template**, or **+ Add card** to start fresh.
+1. Click **Templates** (top bar) to load a saved deck, **Load example** for a ready-made maintenance bump, or **+ Add card** to start fresh.
 2. For each card:
    - Type your **Text** (or leave blank if the card is image-only)
    - Set **Seconds** (or click **Suggested: X.Xs** to apply the recommended time)
@@ -124,13 +124,13 @@ For the most reliable **Export MP4** experience (especially in Firefox), use the
 
 ### Export and use on Plex
 
-1. Click **Export MP4**. Your browser downloads the video (usually takes a few seconds).
+1. Click **Export MP4**. Your browser downloads the video (usually takes a few seconds). You can play it in the preview area, then click **Back to editor** when you're ready to keep working.
 2. Move the MP4 somewhere your Plex server can access.
 3. Follow **[Using announcements on Plex](#using-announcements-on-plex)** below to set it up as a pre-roll (or use [NeXroll](https://github.com/JFLXCLOUD/NeXroll)).
 
 **Tips:**
 
-- Click a card to edit it. Double-click text in the preview to edit in place. Click anywhere else (Output, Text style, Background, etc.) to deselect.
+- Click a card to edit it. Double-click text in the preview to edit in place (you can resize the edit box if you need more room). Click anywhere else (Output, Text style, Background, etc.) to deselect.
 - Refresh the page anytime — your draft should still be there.
 - **Mute background video sound** only affects a video backdrop — not music under **Audio**.
 - Export clears the edit outlines automatically — your MP4 won't have yellow/blue boxes.
@@ -213,11 +213,13 @@ The steps above use only Plex. If you already run [Agregarr](https://github.com/
 
 ## Recent improvements
 
-- **Templates** — Save reusable decks in the browser, load them for new announcements, and export/import `.ahoy.json` backup files. Templates only replace audio or background if those were saved with the template.
+- **Templates** — Save and load reusable decks from the top bar (including optional music and background). Export or import a backup file to move them between browsers.
+- **Preview progress** — While previewing, a progress bar and timer show how far through the bump you are.
+- **After export** — Watch the finished video in the app, then **Back to editor** (or start editing again) to keep working.
+- **Easier in-preview editing** — Double-click text to edit in place; the edit box stays aligned with your layout and can be resized.
 - **Draft auto-save** — Your cards, timing, audio, and background come back after a browser refresh.
 - **Safer clears** — **Clear cards**, **Clear all**, and **Load example** ask for confirmation first.
 - **Media previews** — Hear uploaded audio in the editor; see a thumbnail for image or video backgrounds.
-- **Easier editing** — Double-click text in the preview to edit in place; long filenames no longer break the layout.
 
 ## Planned
 
