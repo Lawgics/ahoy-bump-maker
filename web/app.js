@@ -13,6 +13,8 @@ const btnPreview = $('#btnPreview');
 const btnStop = $('#btnStop');
 const btnExport = $('#btnExport');
 const btnClearAll = $('#btnClearAll');
+const btnBackToEditor = $('#btnBackToEditor');
+const stageTitle = $('#stageTitle');
 const btnAdd = $('#btnAdd');
 const btnLoadExample = $('#btnLoadExample');
 const btnClear = $('#btnClear');
@@ -82,6 +84,7 @@ const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
 const MAX_BG_BYTES = 32 * 1024 * 1024;
 let saveProjectTimer = null;
 let audioObjectUrl = null;
+let exportResultUrl = null;
 let canvasTextEditEl = null;
 let canvasTextEditCardIdx = null;
 let isRestoringProject = false;
@@ -837,6 +840,7 @@ function closeCanvasTextEdit(commit = true) {
 
 function openCanvasTextEdit(cardIdx) {
   if (isPreviewing || !cards[cardIdx]) return;
+  if (isShowingExportResult()) returnToEditor();
   closeCanvasTextEdit(true);
 
   const card = cards[cardIdx];
@@ -1050,6 +1054,7 @@ function deselectCard() {
   snapGuides = { vertical: null, horizontal: null };
   renderCardsUI();
   if (!isPreviewing) {
+    if (isShowingExportResult()) returnToEditor();
     refreshEditView();
     setStatus('Ready. Click a card to edit.');
   }
@@ -1057,6 +1062,7 @@ function deselectCard() {
 
 function setSelectedCard(idx) {
   if (!Number.isFinite(idx) || idx < 0 || idx >= cards.length) return;
+  if (isShowingExportResult()) returnToEditor();
   selectedCardIndex = idx;
   lastSelectedCardIndex = idx;
   renderCardsUI();
@@ -1153,6 +1159,47 @@ function setProgress(p01) {
   const v = clamp(p01, 0, 1);
   progressBar.style.width = (v * 100).toFixed(1) + '%';
 }
+
+function isShowingExportResult() {
+  return !!(resultVideo && resultVideo.style.display !== 'none' && resultVideo.src);
+}
+
+function returnToEditor({ status } = {}) {
+  if (resultVideo) {
+    try { resultVideo.pause(); } catch {}
+    resultVideo.removeAttribute('src');
+    try { resultVideo.load(); } catch {}
+    resultVideo.style.display = 'none';
+  }
+  if (exportResultUrl) {
+    try { URL.revokeObjectURL(exportResultUrl); } catch {}
+    exportResultUrl = null;
+  }
+  if (downloadLink) {
+    downloadLink.removeAttribute('href');
+  }
+  canvas.style.display = 'block';
+  if (btnBackToEditor) btnBackToEditor.hidden = true;
+  if (stageTitle) stageTitle.textContent = 'Preview';
+  if (!isPreviewing) refreshEditView();
+  if (status != null) setStatus(status);
+}
+
+function showExportResult(url) {
+  if (exportResultUrl && exportResultUrl !== url) {
+    try { URL.revokeObjectURL(exportResultUrl); } catch {}
+  }
+  exportResultUrl = url;
+  canvas.style.display = 'none';
+  resultVideo.src = url;
+  resultVideo.style.display = 'block';
+  if (btnBackToEditor) btnBackToEditor.hidden = false;
+  if (stageTitle) stageTitle.textContent = 'Exported video';
+}
+
+btnBackToEditor?.addEventListener('click', () => {
+  returnToEditor({ status: 'Back to editor. Click a card to keep editing.' });
+});
 
 function getSettings() {
   const [w, h] = resolutionSel.value.split('x').map(n => parseInt(n, 10));
@@ -1275,6 +1322,7 @@ function isVideoFile(file) {
 }
 
 function refreshCanvasFromSettings() {
+  if (isShowingExportResult()) returnToEditor();
   if (isPreviewing) {
     const t = clamp((performance.now() - previewStartMs) / 1000, 0, totalDuration());
     drawFrame(t);
@@ -1854,20 +1902,29 @@ function stopPreview() {
   if (rafId) cancelAnimationFrame(rafId);
   rafId = null;
 
+  setProgress(0);
   setStatus('Stopped.');
 }
 
 function previewLoop() {
   if (!isPreviewing) return;
+  const dur = totalDuration();
   const t = (performance.now() - previewStartMs) / 1000;
   drawFrame(t);
-  if (t >= totalDuration()) { stopPreview(); return; }
+  setProgress(dur > 0 ? t / dur : 0);
+  setStatus(`Previewing... ${Math.min(t, dur).toFixed(1)} / ${dur.toFixed(1)}s`);
+  if (t >= dur) {
+    stopPreview();
+    setStatus('Preview finished.');
+    return;
+  }
   rafId = requestAnimationFrame(previewLoop);
 }
 
 btnPreview.addEventListener('click', () => {
   if (!isProjectValid()) return;
 
+  returnToEditor();
   canvas.style.display = 'block';
   resultVideo.style.display = 'none';
 
@@ -2502,6 +2559,7 @@ function renderCardsUI() {
 }
 
 btnAdd.addEventListener('click', () => {
+  if (isShowingExportResult()) returnToEditor();
   cards.push({ text: 'New card', duration: 2.0, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } });
   selectedCardIndex = cards.length - 1;
   renderCardsUI();
@@ -2510,6 +2568,7 @@ btnAdd.addEventListener('click', () => {
 });
 
 function loadExampleCards() {
+  if (isShowingExportResult()) returnToEditor();
   cards.forEach(revokeCardImage);
   cards = [
     { text: 'Ahoy.', duration: 2.0, pos: { preset: 'center', x: 0.5, y: 0.5, dvd: false } },
@@ -2655,6 +2714,7 @@ async function loadSelectedTemplate() {
     );
     if (!ok) return;
   }
+  if (isShowingExportResult()) returnToEditor();
   const ok = await applyProjectData(data, { mode: 'template' });
   if (!ok) {
     setStatus('Could not load template.');
@@ -2771,6 +2831,7 @@ btnClear.addEventListener('click', async () => {
     { title: 'Clear cards?', confirmLabel: 'Clear cards' }
   );
   if (!ok) return;
+  if (isShowingExportResult()) returnToEditor();
   cards.forEach(revokeCardImage);
   cards = [];
   selectedCardIndex = null;
@@ -2787,6 +2848,7 @@ btnClearAll?.addEventListener('click', async () => {
     { title: 'Clear all?', confirmLabel: 'Clear all' }
   );
   if (!ok) return;
+  if (isShowingExportResult()) returnToEditor();
   clearAudio({ skipSave: true });
   clearBackground({ skipSave: true });
   cards.forEach(revokeCardImage);
@@ -2796,7 +2858,7 @@ btnClearAll?.addEventListener('click', async () => {
   await clearProjectStorage();
   renderCardsUI();
   drawFrame(0);
-  setStatus('Cleared. Add a card or load the example to start.');
+  setStatus('Cleared. Add a card, load a template, or load the example to start.');
 });
 
 /* ---- Progress bar fix ---- */
@@ -3056,8 +3118,7 @@ btnExport.addEventListener('click', async () => {
   stopPreview();
   deselectCard();
 
-  canvas.style.display = 'block';
-  resultVideo.style.display = 'none';
+  returnToEditor();
 
   if (logEl) logEl.textContent = '';
   setProgress(0);
@@ -3090,16 +3151,14 @@ btnExport.addEventListener('click', async () => {
 
     const url = URL.createObjectURL(mp4);
 
-    canvas.style.display = 'none';
-    resultVideo.src = url;
-    resultVideo.style.display = 'block';
+    showExportResult(url);
 
     downloadLink.href = url;
     downloadLink.download = `bump-${new Date().toISOString().replace(/[:.]/g,'-')}.mp4`;
     downloadLink.click();
 
     setProgress(1);
-    setStatus('Done. Download started.');
+    setStatus('Done. Check out your video above, or go back to edit.');
   } catch (err) {
     console.error(err);
     const msg = String(err?.message || err);

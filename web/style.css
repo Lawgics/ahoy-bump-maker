@@ -150,9 +150,17 @@ input:focus,select:focus,textarea:focus{border-color:#3a3a3a}
   align-items:center;
   justify-content:space-between;
   margin-bottom:10px;
+  gap:10px;
+}
+.stageTitleRow{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  min-width:0;
 }
 .stageTitle{font-weight:750}
-.stageMeta{color:var(--muted);font-size:12px}
+.stageMeta{color:var(--muted);font-size:12px;flex-shrink:0}
 
 .mediaFrame{
   width:100%;
