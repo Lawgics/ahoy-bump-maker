@@ -1,6 +1,6 @@
 # [ahoy] — ahoy-bump-maker
 
-**Short announcement videos for Plex server admins.**
+**Short Adult Swim–style videos for your Plex users — announcements, how-tos, and more.**
 
 ## Why this exists
 
@@ -10,7 +10,7 @@ Self-hosted Plex admins often struggle to reach everyone on the server:
 - **Discord** only works if every viewer actually uses it
 - **Email** gets ignored or lost
 
-Your users already open Plex to watch something. **[ahoy]** lets you meet them there — create simple Adult Swim–style bump videos for maintenance windows, new features, library updates, and anything else that's awkward to broadcast elsewhere. Export an MP4 and deliver it on Plex as a **pre-roll** or (coming soon) a pinned **home screen** collection.
+Your users already open Plex to watch something. **[ahoy]** lets you meet them there — create simple Adult Swim–style bump videos for whatever you need to say: maintenance windows, library updates, new features, or a quick how-to (e.g. screenshots + short text walking someone through Watchlisting so they can request titles from you). Export an MP4 and deliver it on Plex as a **pre-roll** or a pinned **home screen** collection.
 
 ## See it in action
 
@@ -24,19 +24,20 @@ _App walkthrough (screen recording) coming soon._
 
 ## What you can do
 
-[ahoy] is a small browser app — no video editor to learn. You build a short announcement slide-by-slide, preview it, and download an MP4 for Plex.
+[ahoy] is a small browser app — no video editor to learn. You build a short bump slide-by-slide, preview it, and download an MP4 for Plex.
 
-- **Create a multi-part announcement** — Add cards (like slides). Each card shows for a few seconds, one after another — perfect for "hey everyone" → the news → a sign-off.
-- **Use text, images, or both** — Type your message, upload a logo or photo, or combine them on the same card (e.g. your avatar + "your server admin").
+- **Create a multi-part bump** — Add cards (like slides). Each card shows for a few seconds, one after another — perfect for "hey everyone" → the news → a sign-off, or step-by-step how-tos.
+- **Use text, images, or both** — Type your message, upload a logo, screenshot, or photo, or combine them on the same card (e.g. a UI screenshot + a one-line tip).
+- **Teach a quick workflow** — Drop screenshots onto cards and walk users through a process in the same format as an announcement — no full video editor required.
 - **Control timing** — Set how long each card stays on screen. Not sure? Click the **Suggested** time under Seconds and it picks a readable length based on the card's word and character count.
 - **Style text per card** — Set a default font under **Text style**, then override font or size on individual cards (e.g. a quiet `[ahoy]` whisper on the last card).
 - **Position everything visually** — Click a card, then drag text and images in the preview until the layout looks right. No coordinate math.
 - **Add atmosphere (optional)** — Background image or video (with mute/loop controls), light grain, quick fades, background music — or skip all of it and keep the classic black bump look.
 - **Choose output size** — **Output** sets resolution and FPS; font size scales automatically when you change resolution.
-- **Preview the full video** — Hit **Preview** to watch the whole announcement; a progress bar shows how far you are.
+- **Preview the full video** — Hit **Preview** to watch the whole bump; a progress bar shows how far you are.
 - **Export an MP4** — One click downloads a file you can drop into Plex pre-rolls, NeXroll, or a media folder. After export you can play the result in the app, then go back to editing.
 - **Pick up where you left off** — Your work saves automatically in the browser while you edit.
-- **Save templates** — Use **Templates** in the top bar to save a reusable deck (greeting, logo, sign-off, music, and more), load it for the next announcement, or export/import a backup file.
+- **Save templates** — Use **Templates** in the top bar to save a reusable deck (greeting, logo, sign-off, music, and more), load it for the next video, or export/import a backup file.
 - **Preview uploads** — Play audio and check background files in the editor before you export.
 
 ## Get started
@@ -126,7 +127,7 @@ For the most reliable **Export MP4** experience (especially in Firefox), use the
 
 1. Click **Export MP4**. Your browser downloads the video (usually takes a few seconds). You can play it in the preview area, then click **Back to editor** when you're ready to keep working.
 2. Move the MP4 somewhere your Plex server can access.
-3. Follow **[Using announcements on Plex](#using-announcements-on-plex)** below to set it up as a pre-roll (or use [NeXroll](https://github.com/JFLXCLOUD/NeXroll)).
+3. Follow **[Using your videos on Plex](#using-your-videos-on-plex)** below to set it up as a pre-roll (or use [NeXroll](https://github.com/JFLXCLOUD/NeXroll)).
 
 **Tips:**
 
@@ -137,14 +138,14 @@ For the most reliable **Export MP4** experience (especially in Firefox), use the
 - If **Export** is greyed out, a card is empty — add text or an image to every card.
 - Very large audio or background files might not restore with your draft; the app will tell you if that happens.
 
-## Using announcements on Plex
+## Using your videos on Plex
 
 Once you've exported a bump from [ahoy], you need to get it in front of your users. Two main approaches:
 
 | Method | Good for | Status |
 |--------|----------|--------|
 | **Pre-rolls** | Time-sensitive notices before movies | Documented below |
-| **Home screen collection** | Ongoing notices users browse on their own | Documented below |
+| **Home screen collection** | Ongoing notices and how-tos users can rewatch | Documented below |
 
 ### Pre-rolls (play before movies)
 
@@ -186,7 +187,7 @@ So: server path configured ✓ is not enough — each viewer needs Cinema Traile
 
 ### Home screen collection (see it when they open Plex)
 
-Good for library updates, recurring notices, and anything users should spot on their own — without needing Cinema Trailers or starting a movie.
+Good for library updates, recurring notices, short how-tos, and anything users should spot (and rewatch) on their own — without needing Cinema Trailers or starting a movie.
 
 Unlike pre-rolls, a home collection does **not** depend on each viewer enabling Cinema Trailers. They open Plex, see your **Announcements** row, and watch when they want.
 
@@ -201,7 +202,7 @@ Your friends see the **Announcements** collection as soon as they open Plex and 
 
 **Tips:**
 
-- **Name files clearly** — e.g. `Server Announcement 2026-07-10.mp4` so users know what they're opening and what's new.
+- **Name files clearly** — e.g. `Server Announcement 2026-07-10.mp4` or `How to Watchlist.mp4` so users know what they're opening.
 - **Use your logo as the collection poster** — edit the collection poster so the hub is recognizable on the home screen. You can also set a custom poster per video if you want.
 - **Keep the collection current** — remove old announcements from the collection (or library) when they're no longer relevant so the hub stays useful.
 - **Rescan after uploads** — after you drop a new MP4 in the folder, run a library scan so it shows up in Plex quickly.
