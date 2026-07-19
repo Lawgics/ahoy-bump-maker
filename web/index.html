@@ -5,23 +5,50 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>[ahoy]</title>
 
-  <link rel="icon" href="./assets/ahoy-mark.svg" type="image/svg+xml">
+  <link rel="icon" href="./assets/ahoy-mark.svg?v=2" type="image/svg+xml">
 
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <img class="brandLogo" src="./assets/ahoy-logo.svg" alt="[ahoy]" width="160" height="40" />
+      <img class="brandLogo" src="./assets/ahoy-logo.svg?v=2" alt="[ahoy]" width="160" height="40" />
     </div>
 
     <div class="actions">
       <button id="btnPreview" class="btn">Preview</button>
       <button id="btnStop" class="btn secondary" disabled>Stop</button>
+      <button type="button" id="btnTemplates" class="btn secondary" aria-expanded="false" aria-controls="templatesPanel">Templates</button>
       <button id="btnClearAll" class="btn secondary">Clear all</button>
       <button id="btnExport" class="btn primary">Export MP4</button>
     </div>
   </header>
+
+  <div id="templatesPanel" class="box templatesBox templatesPanelTop" hidden>
+    <div class="templatesPanelHeader">
+      <h2>Templates</h2>
+      <p class="hint templatesHint">Save a reusable deck — greeting, logo, sign-off, music, and more. Load one to start a new announcement.</p>
+    </div>
+    <div class="templatesRow">
+      <label class="templatesSelectLabel">
+        Saved template
+        <select id="templateSelect">
+          <option value="">No templates saved</option>
+        </select>
+      </label>
+      <div class="templatesActions">
+        <button type="button" id="btnLoadTemplate" class="btn small secondary" disabled>Load</button>
+        <button type="button" id="btnSaveTemplate" class="btn small">Save as…</button>
+        <button type="button" id="btnDeleteTemplate" class="btn small secondary" disabled>Delete</button>
+      </div>
+    </div>
+    <div class="templatesFileRow">
+      <button type="button" id="btnExportTemplate" class="btn small secondary linkish" disabled>Export template</button>
+      <span class="templatesSep">·</span>
+      <button type="button" id="btnImportTemplate" class="btn small secondary linkish">Import template</button>
+      <input id="templateImportFile" type="file" accept=".json,.ahoy.json,application/json" hidden />
+    </div>
+  </div>
 
   <main class="layoutTop">
     <!-- PREVIEW TOP -->
@@ -65,30 +92,6 @@
 
           <div class="hint" style="margin-bottom:10px;">
             Click a card to edit. Double-click text in the preview to edit it there. Drag the grip to reorder cards.
-          </div>
-
-          <div class="box boxSpaced templatesBox">
-            <h2>Templates</h2>
-            <p class="hint templatesHint">Save a reusable deck — greeting, logo, sign-off, music, and more. Load one to start a new announcement.</p>
-            <div class="templatesRow">
-              <label class="templatesSelectLabel">
-                Saved template
-                <select id="templateSelect">
-                  <option value="">No templates saved</option>
-                </select>
-              </label>
-              <div class="templatesActions">
-                <button type="button" id="btnLoadTemplate" class="btn small secondary" disabled>Load</button>
-                <button type="button" id="btnSaveTemplate" class="btn small">Save as…</button>
-                <button type="button" id="btnDeleteTemplate" class="btn small secondary" disabled>Delete</button>
-              </div>
-            </div>
-            <div class="templatesFileRow">
-              <button type="button" id="btnExportTemplate" class="btn small secondary linkish" disabled>Export template</button>
-              <span class="templatesSep">·</span>
-              <button type="button" id="btnImportTemplate" class="btn small secondary linkish">Import template</button>
-              <input id="templateImportFile" type="file" accept=".json,.ahoy.json,application/json" hidden />
-            </div>
           </div>
 
           <div id="cards"></div>

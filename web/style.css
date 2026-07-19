@@ -274,6 +274,15 @@ input:focus,select:focus,textarea:focus{border-color:#3a3a3a}
 .boxSpaced{ margin-top:14px; }
 
 .templatesBox{ padding:12px 14px; }
+.templatesBox[hidden]{ display:none !important; }
+.templatesPanelTop{
+  margin:16px 16px 0;
+}
+.templatesPanelHeader h2{ margin-top:0; }
+.btnTemplatesActive{
+  border-color:#3a3a3a;
+  background:rgba(255,255,255,.06);
+}
 .templatesHint{ margin-top:0; margin-bottom:10px; }
 .templatesRow{
   display:grid;
@@ -582,18 +591,21 @@ input:focus,select:focus,textarea:focus{border-color:#3a3a3a}
   position:absolute;
   z-index:5;
   margin:0;
-  padding:8px 10px;
+  padding:10px 12px;
   border:2px solid rgba(255,210,80,.95);
   border-radius:8px;
-  background:rgba(0,0,0,.82);
+  background:rgba(0,0,0,.92);
   color:#fff;
   font-family:inherit;
   font-weight:700;
   line-height:1.18;
-  resize:none;
-  overflow:hidden;
+  resize:both;
+  overflow:auto;
+  box-sizing:border-box;
   box-shadow:0 8px 28px rgba(0,0,0,.45);
   outline:none;
+  min-width:160px;
+  min-height:64px;
 }
 
 /* Position row */

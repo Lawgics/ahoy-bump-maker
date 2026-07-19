@@ -16,6 +16,8 @@ const btnClearAll = $('#btnClearAll');
 const btnAdd = $('#btnAdd');
 const btnLoadExample = $('#btnLoadExample');
 const btnClear = $('#btnClear');
+const btnTemplates = $('#btnTemplates');
+const templatesPanel = $('#templatesPanel');
 
 const templateSelect = $('#templateSelect');
 const btnLoadTemplate = $('#btnLoadTemplate');
@@ -73,6 +75,7 @@ const DRAFT_STORE = 'draft';
 const TEMPLATE_STORE = 'templates';
 const TEMPLATE_KIND = 'ahoy-template';
 const TEMPLATE_VERSION = 1;
+const TEMPLATES_PANEL_KEY = 'ahoy-templates-panel-open';
 const DB_VERSION = 2;
 const MAX_CARD_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
@@ -825,11 +828,11 @@ function closeCanvasTextEdit(commit = true) {
       autosizeTA(ta);
     }
     scheduleSaveProject();
-    if (!isPreviewing) refreshEditView();
   }
   canvasTextEditEl.remove();
   canvasTextEditEl = null;
   canvasTextEditCardIdx = null;
+  if (!isPreviewing) refreshEditView();
 }
 
 function openCanvasTextEdit(cardIdx) {
@@ -838,7 +841,8 @@ function openCanvasTextEdit(cardIdx) {
 
   const card = cards[cardIdx];
   const { w, h } = getSettings();
-  const tr = getTextRect(card, w, h, getCardTextStyle(card));
+  const style = getCardTextStyle(card);
+  const tr = getTextRect(card, w, h, style);
   if (!tr) return;
 
   const wrap = previewFrame || canvas.parentElement;
@@ -849,23 +853,65 @@ function openCanvasTextEdit(cardIdx) {
   const scaleX = canvasRect.width / w;
   const scaleY = canvasRect.height / h;
 
+  const pos = getCardPos(card);
+  let align = 'center';
+  let vAlign = 'middle';
+  if (pos.preset !== 'custom') {
+    const anchor = presetToAnchor(pos.preset);
+    align = anchor.align;
+    vAlign = anchor.v;
+  }
+
   const ta = document.createElement('textarea');
   ta.className = 'canvasTextEdit';
   ta.value = card.text || '';
   ta.spellcheck = false;
+  ta.style.textAlign = align;
 
-  const pad = 8;
-  const left = canvasRect.left - wrapRect.left + tr.left * scaleX - pad;
-  const top = canvasRect.top - wrapRect.top + tr.top * scaleY - pad;
-  const width = Math.max(120, tr.w * scaleX + pad * 2);
-  const height = Math.max(48, tr.h * scaleY + pad * 2);
-  const fontSize = Math.max(12, (getCardTextStyle(card).fontSize || 48) * scaleY);
+  const border = 4; // 2px border each side (box-sizing: border-box)
+  const padX = 12;
+  const padY = 10;
+  const fontSize = Math.max(14, (style.fontSize || 48) * scaleY);
+  const lineH = fontSize * 1.18;
+  const contentW = tr.w * scaleX;
+  const contentH = tr.h * scaleY;
+  // Inner width must be >= canvas text width or the last word wraps early
+  const wrapSlop = 18;
+  const innerW = contentW + wrapSlop;
+  const minOuterW = Math.max(240, Math.min(canvasRect.width * 0.5, 440));
+  const width = Math.max(minOuterW, innerW + padX * 2 + border);
+  // Extra line of height so a wrap (or font metric mismatch) doesn't clip
+  const innerH = contentH + lineH;
+  const height = Math.max(innerH + padY * 2 + border, lineH * 2 + padY * 2 + border, 72);
+
+  const textLeft = canvasRect.left - wrapRect.left + tr.left * scaleX;
+  const textTop = canvasRect.top - wrapRect.top + tr.top * scaleY;
+  const textRight = textLeft + contentW;
+  const textBottom = textTop + contentH;
+  const textCenterX = textLeft + contentW / 2;
+
+  let left;
+  if (align === 'left') left = textLeft - padX;
+  else if (align === 'right') left = textRight + padX - width;
+  else left = textCenterX - width / 2;
+
+  // Pin first line to the canvas text top (avoids "half visible" from vertical centering)
+  let top = textTop - padY;
+  if (vAlign === 'bottom') top = textBottom + padY - height;
+
+  left = clamp(left, 6, Math.max(6, wrapRect.width - width - 6));
+  top = clamp(top, 6, Math.max(6, wrapRect.height - height - 6));
 
   ta.style.left = `${left}px`;
   ta.style.top = `${top}px`;
   ta.style.width = `${width}px`;
   ta.style.height = `${height}px`;
   ta.style.fontSize = `${fontSize}px`;
+  ta.style.lineHeight = '1.18';
+  ta.style.padding = `${padY}px ${padX}px`;
+  ta.style.minWidth = `${Math.min(240, width)}px`;
+  ta.style.minHeight = `${Math.min(72, height)}px`;
+  ta.style.boxSizing = 'border-box';
 
   ta.addEventListener('input', () => {
     card.text = ta.value;
@@ -873,6 +919,12 @@ function openCanvasTextEdit(cardIdx) {
     if (cardTa) {
       cardTa.value = ta.value;
       autosizeTA(cardTa);
+    }
+    // Grow if content wraps taller than the box
+    const need = ta.scrollHeight;
+    if (need > ta.clientHeight + 1) {
+      const nextH = Math.min(need + 2, wrapRect.height - 12);
+      ta.style.height = `${nextH}px`;
     }
     scheduleSaveProject();
   });
@@ -891,6 +943,15 @@ function openCanvasTextEdit(cardIdx) {
   wrap.appendChild(ta);
   canvasTextEditEl = ta;
   canvasTextEditCardIdx = cardIdx;
+  refreshEditView();
+  // If font metrics still wrap, grow once after layout
+  requestAnimationFrame(() => {
+    if (canvasTextEditEl !== ta) return;
+    const need = ta.scrollHeight;
+    if (need > ta.clientHeight + 1) {
+      ta.style.height = `${Math.min(need + 2, wrapRect.height - 12)}px`;
+    }
+  });
   ta.focus();
   ta.select();
 }
@@ -1299,6 +1360,8 @@ function drawFrame(tSeconds) {
   }
 
   const text = escapeText(card.text || '').trim();
+  const editingThis = canvasTextEditCardIdx === active.idx;
+
   if (!text) {
     drawEditChrome(card, w, h);
     if (enableGrain) drawGrain(w, h);
@@ -1306,7 +1369,9 @@ function drawFrame(tSeconds) {
   }
 
   const textStyle = getCardTextStyle(card);
-  drawCardText(card, w, h, contentAlpha, { ...textStyle, tSeconds, active });
+  if (!editingThis) {
+    drawCardText(card, w, h, contentAlpha, { ...textStyle, tSeconds, active });
+  }
   drawEditChrome(card, w, h);
   if (enableGrain) drawGrain(w, h);
 }
@@ -1472,7 +1537,7 @@ function drawEditChrome(card, w, h) {
   }
 
   const tr = getTextRect(card, w, h, settings);
-  if (tr) {
+  if (tr && canvasTextEditCardIdx !== selectedCardIndex) {
     ctx.save();
     ctx.strokeStyle = 'rgba(255,210,80,0.95)';
     ctx.lineWidth = lineW;
@@ -2487,6 +2552,8 @@ async function refreshTemplatesUi(preferredName) {
   try { templates = await idbListTemplateNames(); } catch {}
   const prev = preferredName || templateSelect.value;
   templateSelect.innerHTML = '';
+  updateTemplatesToggleLabel(templates.length);
+
   if (!templates.length) {
     const opt = document.createElement('option');
     opt.value = '';
@@ -2515,6 +2582,35 @@ async function refreshTemplatesUi(preferredName) {
   if (btnDeleteTemplate) btnDeleteTemplate.disabled = !hasSel;
   if (btnExportTemplate) btnExportTemplate.disabled = !hasSel;
 }
+
+function updateTemplatesToggleLabel(count) {
+  if (!btnTemplates) return;
+  btnTemplates.textContent = count > 0 ? `Templates (${count})` : 'Templates';
+}
+
+function isTemplatesPanelOpen() {
+  return !!(templatesPanel && !templatesPanel.hidden);
+}
+
+function setTemplatesPanelOpen(open) {
+  if (!templatesPanel || !btnTemplates) return;
+  templatesPanel.hidden = !open;
+  btnTemplates.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btnTemplates.classList.toggle('btnTemplatesActive', open);
+  try {
+    localStorage.setItem(TEMPLATES_PANEL_KEY, open ? '1' : '0');
+  } catch {}
+}
+
+function initTemplatesPanel() {
+  let open = false;
+  try { open = localStorage.getItem(TEMPLATES_PANEL_KEY) === '1'; } catch {}
+  setTemplatesPanelOpen(open);
+}
+
+btnTemplates?.addEventListener('click', () => {
+  setTemplatesPanelOpen(!isTemplatesPanelOpen());
+});
 
 async function saveCurrentAsTemplate(name) {
   const normalized = normalizeTemplateName(name);
@@ -3040,6 +3136,7 @@ async function initApp() {
   const restored = await loadProjectFromStorage();
   if (!restored) loadExampleCards();
 
+  initTemplatesPanel();
   await refreshTemplatesUi();
 
   updateMeta();
